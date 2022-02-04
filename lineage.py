@@ -54,20 +54,6 @@ class lineage:
             * `source` (`NodeInput!`): The source node
         '''
         put = Mutation()
-        
-        source = {
-            'object_id': source_node['object_id']
-            ,'object_type': source_node['object_type']
-            ,'resouce_id': warehouse_id
-        },
-        destination = {
-            'object_id': destination_node_id
-            ,'object_type': 'ML_Model'
-            ,'resouce_id': warehouse_id
-        }
-        
-        put.create_or_update_lineage_edge(source=source, destination=destination)
-
         put.create_or_update_lineage_edge(
             source = dict(
                 object_id=source_node['object_id']
