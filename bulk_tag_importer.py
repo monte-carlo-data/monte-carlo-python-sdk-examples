@@ -1,3 +1,11 @@
+#Instructions:
+#1. Create a CSV with 3 columns in the following order: full_table_id, tag key, tag value
+#2. Run this script, input your API Key ID, Token (generated in Settings -> API within MC UI)
+#3. Input the Data Warehouse ID in which the tables to import tags exist (will check and ignore tables in other warehouses)
+	#Note: If you do not know the Data Warehouse ID, you can skip by pressing enter and the script will give you the options to choose from. You'll need to rerun the script after this.
+#4. Input the name of the CSV with the tags
+#Note: If you have a list of tags for tables in multiple warehouses, run again for each data warehouse ID
+
 from pycarlo.core import Client, Query, Mutation, Session
 import csv
 import json
