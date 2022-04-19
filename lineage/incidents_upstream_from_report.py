@@ -10,6 +10,10 @@ exclude_incidents_with_status = ['FIXED', 'FALSE_POSITIVE', 'EXPECTED', 'NO_ACTI
 incident_types_to_include = ['CUSTOM_RULE_ANOMALIES','DELETED_TABLES']
 incident_sub_types_to_include = ['dimension_anomaly','field_metrics_anomaly','freshness_anomaly','volume_anomaly']
 
+########################################################################
+# Fetches any recent incidents from an upstream BI report.
+########################################################################
+
 def get_report_quality_status(mcd_profile, bi_report_id, exclude_incidents_with_status, incident_types_to_include, incident_sub_types_to_include):
     # start a Monte Carlo API session
     client = Client(session=Session(mcd_profile=mcd_profile))

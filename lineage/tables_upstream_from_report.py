@@ -7,6 +7,10 @@ import networkx as nx
 mcd_profile='dev'
 bi_report_id = '123'
 
+########################################################################
+# Fetches all tables upstream from a BI Report.
+########################################################################
+
 # start a Monte Carlo API session
 client = Client(session=Session(mcd_profile=mcd_profile))
 
