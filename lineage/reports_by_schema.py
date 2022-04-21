@@ -7,6 +7,10 @@ import networkx as nx
 mcd_profile='dev'
 schema = 'my_dataset'
 
+########################################################################
+# Fetches all reports that are downstream of assets in a schema.
+########################################################################
+
 # start a Monte Carlo API session
 client = Client(session=Session(mcd_profile=mcd_profile))
 

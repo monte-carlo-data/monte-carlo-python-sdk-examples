@@ -1,0 +1,2 @@
+pycarlo==0.0.8
+requests==2.27.1
