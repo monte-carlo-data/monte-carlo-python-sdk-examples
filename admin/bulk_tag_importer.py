@@ -1,5 +1,6 @@
 #Instructions:
 #1. Create a CSV with 3 columns in the following order: full_table_id, tag key, tag value
+#	full_table_is must be lowercase in the format database:schema.table
 #2. Run this script, input your API Key ID, Token (generated in Settings -> API within MC UI)
 #3. Input the Data Warehouse ID in which the tables to import tags exist (will check and ignore tables in other warehouses)
 	#Note: If you do not know the Data Warehouse ID, you can skip by pressing enter and the script will give you the options to choose from. You'll need to rerun the script after this.
@@ -98,4 +99,4 @@ if __name__ == '__main__':
 	elif csv_file and not dw_id:
 		warehouse_id = getDefaultWarehouse(mcd_id,mcd_token)
 		mcon_dict = getMcons(mcd_id,mcd_token,warehouse_id)
-		bulkImportTagsFromCSV(csv_file,mcon_dict)
+		bulkImportTagsFromCSV(mcd_id,mcd_token,csv_file,mcon_dict)
