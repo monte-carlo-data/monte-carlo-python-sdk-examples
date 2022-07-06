@@ -98,4 +98,4 @@ if __name__ == '__main__':
 	elif csv_file and not dw_id:
 		warehouse_id = getDefaultWarehouse(mcd_id,mcd_token)
 		mcon_dict = getMcons(mcd_id,mcd_token,warehouse_id)
-		bulkImportTagsFromCSV(csv_file,mcon_dict)
+		bulkImportTagsFromCSV(mcd_id,mcd_token,csv_file,mcon_dict)
