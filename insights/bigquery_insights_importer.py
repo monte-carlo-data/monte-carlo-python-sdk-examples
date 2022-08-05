@@ -6,7 +6,7 @@
 #5. Update the insight_names and insight_report_names for the specific reports you want to include (associated names should be in same index)
 #NOTES: 
 # - This will create local CSV files for all data imported to BigQuery
-# - This will also fail to overwrite if you've already run this script - so you will need to delete the existing monte-carlo-insights dataset to rerun.
+# - Running this script will overwrite existing dataset and tables with same names in BQ project
 
 from pycarlo.core import Client, Query, Mutation, Session
 import csv
@@ -18,8 +18,8 @@ from google.oauth2 import service_account
 key_path = ""
 bq_project_id=""
 mcd_profile=""
-insight_names = ["key_assets","monitors","cleanup_suggestions","events","table_read_write_stats"]
-insight_report_names = ["key_assets.csv","monitors.csv","cleanup_suggestions.csv","events.csv","table_read_write_stats.csv"]
+insight_names = ["key_assets","monitors","cleanup_suggestions","events","table_read_write_stats","incident_history"]
+insight_report_names = ["key_assets.csv","monitors.csv","cleanup_suggestions.csv","events.csv","table_read_write_stats.csv","incident_history.csv"]
 #-------------------------------------------------------
 
 credentials = service_account.Credentials.from_service_account_file(key_path, scopes=["https://www.googleapis.com/auth/cloud-platform"])
@@ -28,9 +28,9 @@ dataset_id = "monte_carlo_insights"
 client = Client(session=Session(mcd_profile=mcd_profile))
 
 
-bq_client.create_dataset("monte_carlo_insights")
+bq_client.create_dataset("monte_carlo_insights", exists_ok = True)
 for report in insight_names:
-	bq_client.create_table(bq_project_id+".monte_carlo_insights."+report)
+	bq_client.create_table(bq_project_id+".monte_carlo_insights."+report, exists_ok = True)
 	print("Created {} Table in {} dataset".format(report,dataset_id))
 
 for i in range(len(insight_report_names)):
@@ -48,6 +48,8 @@ for i in range(len(insight_report_names)):
 	dataset_ref = bq_client.dataset(dataset_id)
 	table_ref = dataset_ref.table(table_id)
 	job_config = bigquery.LoadJobConfig()
+	job_config.write_disposition = 'WRITE_TRUNCATE'
+	job_config.allow_quoted_newlines = True
 	job_config.source_format = bigquery.SourceFormat.CSV
 	job_config.autodetect = True
 
