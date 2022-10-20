@@ -24,7 +24,6 @@ def lambda_handler(event: Dict, context: Dict) -> Dict:
 
 
 def verify_signature(mcd_signature: str, body: Dict) -> bool:
-    # return True
     body_as_byes = urllib.parse.urlencode(body).encode('utf8')
     computed_signature = hmac.new(SHARED_SIGNING_SECRET, body_as_byes, hashlib.sha512).hexdigest()
     return hmac.compare_digest(computed_signature, mcd_signature)
@@ -38,7 +37,7 @@ def google_webhook(body):
     New Incident
     Type: {}
     URL: {}
-    '''.format(type,url)
+    '''.format(type,body['payload']['url'])
     message_headers = {'Content-Type': 'application/json; charset=UTF-8'}
     bot_message = {
         'text': message_text
