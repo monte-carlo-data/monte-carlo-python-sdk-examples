@@ -2,14 +2,17 @@
 #NOTE: Only works if Monte Carlo environment has a single resource connected
 #1. Pass your api keys when running script, and pass name of .yml file you want to write to
 #2. .YML file will be written, which can then be used when syncing Monitors-as-code
+#3. If you have more than 500 ui monitors to migrate edit line 36 to a higher number
 
 from pycarlo.core import Client, Query, Mutation, Session
 from typing import Optional
+import yaml
+from yaml.loader import SafeLoader
 import textwrap
 
 def get_monitors_query(limit: Optional[int] = 1000) -> Query:
 	query = Query()
-	get_monitors = query.get_monitors(limit=limit)
+	get_monitors = query.get_monitors(limit=limit,namespaces=["ui"])
 	get_monitors.__fields__("uuid","monitor_type","resource_id")
 	return query
 
@@ -30,18 +33,23 @@ def bulk_export_yaml(mcdId,mcdToken,fileName):
 		for monitor in response:
 			counter+=1
 			monitor_list.append(monitor.uuid)
-			if len(monitor_list) == 20:
+			if len(monitor_list) == 500:
 				monitor_yaml = client(export_yaml_template(monitor_list)).export_monte_carlo_config_templates
 				yaml_file.write(textwrap.indent(monitor_yaml["config_template_as_yaml"],prefix="  "))
+				print(monitor_yaml["config_template_as_yaml"])
+				print("counter: " + str(counter))
 				monitor_list=[]
 				continue
 		monitor_yaml = client(export_yaml_template(monitor_list)).export_monte_carlo_config_templates
 		yaml_file.write(textwrap.indent(monitor_yaml["config_template_as_yaml"],prefix="  "))
+		print(monitor_yaml["config_template_as_yaml"])
+		print("counter: END")
 
 if __name__ == '__main__':
 	#-------------------INPUT VARIABLES---------------------
 	mcd_id = input("MCD ID: ")
 	mcd_token = input("MCD Token: ")
+	# dw_id = input("DW ID: ")
 	filename = input("YAML Filename: ")
 	#-------------------------------------------------------
 	bulk_export_yaml(mcd_id,mcd_token,filename)
