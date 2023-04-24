@@ -23,8 +23,8 @@ insight_report_names = ["monitors.csv","cleanup_suggestions.csv","events.csv","i
 
 # Other variables which you should customize as needed:
 mcd_profile=""
-table_schema = 'com_us_alyt_04'
-user = 'gordon.strodel@takeda.com'
+table_schema = 'your_destination_schema_name'
+user = 'your_user_name_in_DBFS'
 
 # COMMAND ----------
 
