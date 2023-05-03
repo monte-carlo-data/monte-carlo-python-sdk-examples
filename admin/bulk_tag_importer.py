@@ -41,7 +41,7 @@ def getMcons(mcdId,mcdToken,dwId):
 		response = client(get_table_query(dwId=dwId,after=next_token)).get_tables
 		print(response)
 		for table in response.edges:
-			table_mcon_dict[table.node.full_table_id] = table.node.mcon
+			table_mcon_dict[table.node.full_table_id.lower()] = table.node.mcon
 		if response.page_info.has_next_page:
 			next_token = response.page_info.end_cursor
 		else:
@@ -67,12 +67,13 @@ def bulkImportTagsFromCSV(mcdId,mcdToken,csvFileName, mconDict):
 		incremental_tags = 0
 		for row in tags:
 			total_tags += 1
-			if row[0] not in mconDict.keys():
-				print("check failed: " + row[0])
+			if row[0].lower() not in mconDict.keys():
+				print("check failed: " + row[0].lower())
 				continue
-			if mconDict[row[0]]:
-				print("check succeeded: " + row[0])
-				temp_obj=dict(mconId=mconDict[row[0]],propertyName=row[1],propertyValue=row[2])
+			if mconDict[row[0].lower()]:
+				print("check succeeded: " + row[0].lower())
+				temp_obj=dict(mconId=mconDict[row[0].lower()],propertyName=row[1],propertyValue=row[2])
+				print(temp_obj)
 				tags_list.append(temp_obj)
 				imported_tag_counter += 1
 				incremental_tags += 1
