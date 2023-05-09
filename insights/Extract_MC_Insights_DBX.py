@@ -10,15 +10,15 @@
 # COMMAND ----------
 
 # DBTITLE 1,Runtime Variables
-# Preferred: Monte Carlo Credentials stored in DBX Secret Key Repo called "monte-carlo-creds":
-mcd_id = dbutils.secrets.get(scope = "pdt-monte-carlo", key = "mc-rest-id")
-mcd_token = dbutils.secrets.get(scope = "pdt-monte-carlo", key = "mc-rest")
+# Monte Carlo Credentials stored in DBX Secret Key Repo called "monte-carlo-creds":
+mcd_id = dbutils.secrets.get(scope = "monte-carlo-creds", key = "mc-id")
+mcd_token = dbutils.secrets.get(scope = "monte-carlo-creds", key = "mc-token")
 
 # Full List of Reports Needed, Edit as Needed for Databricks
 insight_names = ["monitors","cleanup_suggestions","events","incident_history"]
 insight_report_names = ["monitors.csv","cleanup_suggestions.csv","events.csv","incident_history.csv"]
 
-# Other variables which you should customize as needed:
+# Other variables which you should customize:
 mcd_profile=""
 table_schema = 'com_us_alyt_04'
 user = 'gordon.strodel@takeda.com'
