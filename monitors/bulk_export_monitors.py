@@ -12,7 +12,7 @@ import textwrap
 
 def get_monitors_query(limit: Optional[int] = 1000) -> Query:
 	query = Query()
-	get_monitors = query.get_monitors(limit=limit,namespaces=["ui"])
+	get_monitors = query.get_monitors(limit=limit,namespaces=["ui"],monitor_types=["CUSTOM_SQL", "STATS", "CATEGORIES", "FRESHNESS", "VOLUME", "JSON_SCHEMA" ])
 	get_monitors.__fields__("uuid","monitor_type","resource_id")
 	return query
 
