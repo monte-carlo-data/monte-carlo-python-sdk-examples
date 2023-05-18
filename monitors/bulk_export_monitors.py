@@ -10,9 +10,10 @@ import yaml
 from yaml.loader import SafeLoader
 import textwrap
 
+#Temporarily removing FIELD_QUALITY from monitor_types until it is supported in the PyCarlo SDKs
 def get_monitors_query(limit: Optional[int] = 1000) -> Query:
 	query = Query()
-	get_monitors = query.get_monitors(limit=limit,namespaces=["ui"],monitor_types=["CUSTOM_SQL", "STATS", "CATEGORIES", "FRESHNESS", "VOLUME", "JSON_SCHEMA" ])
+	get_monitors = query.get_monitors(limit=limit,namespaces=["ui"],monitor_types=["CUSTOM_SQL", "STATS", "CATEGORIES", "FRESHNESS", "VOLUME", "JSON_SCHEMA", "TABLE_METRIC" ])
 	get_monitors.__fields__("uuid","monitor_type","resource_id")
 	return query
 
