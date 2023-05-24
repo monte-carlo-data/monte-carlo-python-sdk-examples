@@ -2,27 +2,39 @@ from pycarlo.core import Client, Query, Mutation, Session
 import csv
 
 def userRoleExporter(file_name):
-	with open(file_name, "w") as user_roles:
-		csv_writer=csv.writer(user_roles)
-		first_row=["Email","Role", "Status"]
+	with open(file_name, "w") as roles:
+		csv_writer=csv.writer(roles)
+		first_row=["Email","Role"]
 		csv_writer.writerow(first_row)
 
-		query = Query()
-		user_roles = query.get_user.account
-		user_roles.users(first=5000).edges.node.__fields__('email','role','permissions','state')
-		user_roles.user_invites(first=5000,state="sent").edges.node.__fields__('email','state','role')
-		print(query)
+		user_query = '''
+		query {
+		  getUsersInAccount(first: 1000) {
+		    pageInfo {
+		      hasNextPage
+		      endCursor
+		    }
+		    edges {
+		      node {
+		        email
+		        auth {
+		          groups
+		        }
+		      }
+		    }
+		  }
+		}
+		'''
+		query=Query()
+		response= client(user_query).get_users_in_account.edges
 
-		user_invites=client(query).get_user.account.user_invites.edges
-		user_roles=client(query).get_user.account.users.edges
-
-		for user in user_roles:
-			csv_writer.writerow([user.node.email,user.node.role,"ACTIVE"])
-		for user in user_invites:
-			csv_writer.writerow([user.node.email,user.node.role,"INVITED"])
+		for user in response:
+			print(user.node.email)
+			csv_writer.writerow([user.node.email,str(user.node.auth.groups)])
 
 if __name__ == '__main__':
 	mcd_id = input("MCD ID: ")
 	mcd_token = input("MCD Token: ")
+	csv_name = input("CSV Name: ")
 	client = Client(session=Session(mcd_id=mcd_id,mcd_token=mcd_token))
-	userRoleExporter('user_roles.csv')
+	userRoleExporter(csv_name)
