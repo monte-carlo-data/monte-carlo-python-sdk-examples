@@ -64,7 +64,7 @@ def getPayload(query, variables):
 		'query': query,
 		'variables': variables
 	}
-	payload = json.dumps(data, ensure_ascii=False).replace("\\\\", "\\")
+	payload = json.dumps(data).replace("\\\\", "\\")
 
 	return payload
 
