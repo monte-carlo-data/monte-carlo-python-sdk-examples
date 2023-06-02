@@ -32,7 +32,7 @@ def getDefaultWarehouse(mcdId,mcdToken):
 
 def get_table_query(dwId,first: Optional[int] = 1000, after: Optional[str] = None) -> Query:
     query = Query()
-    get_tables = query.get_tables(first=first, dw_id=dwId, is_deleted=True, **(dict(after=after) if after else {}))
+    get_tables = query.get_tables(first=first, dw_id=dwId, is_deleted=False, **(dict(after=after) if after else {}))
     get_tables.edges.node.__fields__("full_table_id","mcon")
     get_tables.page_info.__fields__(end_cursor=True)
     get_tables.page_info.__fields__("has_next_page")
