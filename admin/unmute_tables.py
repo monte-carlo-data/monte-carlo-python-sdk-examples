@@ -1,6 +1,6 @@
 #####
 # About:
-#   This script is indended to be used to UNMUTE all muted tables within a specified warehouse
+#   This script is indended to be used to UNMUTE ALL currently muted tables within a specified warehouse
 # Instructions:
 #   1. Run this script, input your API Key ID, Token (generated in Settings -> API within MC UI)
 #   2. If applicable, copy/paste the UUID of the warehouse you would like to target to unmute tables
