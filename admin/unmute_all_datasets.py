@@ -68,7 +68,7 @@ def getDatasetUuidDict(mcdId,mcdToken,dwId):
 	return dataset_uuid_dict
 
 def get_date():
-	return datetime.today().strftime('%Y-%m-%d_%H:%M:%S')
+	return datetime.today().strftime('%Y-%m-%d_%H_%M_%S')
 
 def userReview(uuid_dict, dw_id):
 	if not uuid_dict:
