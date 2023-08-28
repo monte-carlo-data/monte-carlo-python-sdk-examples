@@ -1,3 +1,4 @@
 networkx==2.6.3
-pycarlo==0.0.8
+pycarlo>=0.8.1
 requests==2.27.1
+pandas==2.0.3

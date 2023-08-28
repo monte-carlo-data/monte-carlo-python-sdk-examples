@@ -24,3 +24,4 @@ Very brief descriptions of the examples and the link to the main example/project
 | [Get All Tables Upstream from a Report](lineage/tables_upstream_from_report.py) | Outputs a csv of any DWH/DL tables upstream from an inputted BI Report. |
 | [Get Recent Incidents Upstream from a Report](lineage/incidents_upstream_from_report.py) | Prints a boolean (if there is any incidents) if there are upstream incidents and a list of affected upstream tables from an inputted BI Report. |
 | [Get Downstream Assets from an Asset](lineage/incidents_upstream_from_report.py) | Fetches all downstream assets from a specified asset to a csv. |
+| [Get Lineage Graph for All Tables](lineage/lineage_graph_retrieval.py) | Fetches all tables and edges to csv. |
