@@ -10,6 +10,7 @@ Very brief descriptions of the examples and the link to the main example/project
 | Example Topic | Discussion |
 | ------------- | ---------- |
 | [Import Insights to BigQuery](insights/bigquery_insights_importer.py) | Script to import Monte Carlo's insight reports directly to BigQuery. |
+| [Import Insights to Databricks](insights/Extract_MC_Insights_DBX.py) | Script to import Monte Carlo's insight reports directly to Databricks. |
 
 ### Tagging Assets
 | Example Topic | Discussion |
