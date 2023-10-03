@@ -31,24 +31,27 @@ insight_name_to_report_mapping = {
     "custom_monitor_notifications": "custom_monitor_notifications.csv",
     "unmonitored_tables": "unmonitored_tables.csv",
 }
-dbutils.widgets.multiselect('INSIGHTS TO DOWNLOAD', defaultValue="incident_history",
-                            choices=list(insight_name_to_report_mapping.keys()))
+dbutils.widgets.multiselect(
+    'INSIGHTS TO DOWNLOAD',
+    defaultValue="incident_history",
+    choices=list(insight_name_to_report_mapping.keys())
+)
 dbutils.widgets.text("SCHEMA TO WRITE TO", "mc_insights")
 
 # COMMAND ----------
 
 # DBTITLE 1,Runtime Variables
 # Monte Carlo Credentials stored in DBX Secret Key Repo called "monte-carlo-creds":
-mcd_id = dbutils.secrets.get(scope="monte-carlo-creds", key="mc-id")
-mcd_token = dbutils.secrets.get(scope="monte-carlo-creds", key="mc-token")
+mcd_id = dbutils.secrets.get(scope = "monte-carlo-creds", key = "mc-id")
+mcd_token = dbutils.secrets.get(scope = "monte-carlo-creds", key = "mc-token")
 
 # List of reports to download and load to DBX are pulled from input widgets
 insight_names = dbutils.widgets.get("INSIGHTS TO DOWNLOAD").split(',')
 insight_report_names = [insight_name_to_report_mapping[insight] for insight in insight_names]
 table_schema = dbutils.widgets.get("SCHEMA TO WRITE TO")
 
-# Other variables which you can customize:
-mcd_profile = ""
+# Other variables which you should customize:
+mcd_profile=""
 
 # COMMAND ----------
 
