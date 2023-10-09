@@ -42,8 +42,8 @@ for insight in response:
 # DBTITLE 1,Create User Input Widgets
 dbutils.widgets.multiselect(
     'INSIGHTS TO DOWNLOAD',
-    defaultValue="incident_history",
-    choices=list(insight_name_to_report_mapping.keys())
+    defaultValue='ALL',
+    choices=['ALL'] + list(insight_name_to_report_mapping.keys())
 )
 dbutils.widgets.text("SCHEMA TO WRITE TO", "mcd_insights")
 
@@ -51,7 +51,12 @@ dbutils.widgets.text("SCHEMA TO WRITE TO", "mcd_insights")
 
 # DBTITLE 1,Runtime Variables (Pulled From Input Widgets)
 insight_names = dbutils.widgets.get("INSIGHTS TO DOWNLOAD").split(',')
-insight_report_names = [insight_name_to_report_mapping[insight] for insight in insight_names]
+
+# If ALL is in list of insight_names selected, even if other individual insights are selected, we will download all insights
+if 'ALL' in insight_names:
+    insight_report_names = list(insight_name_to_report_mapping.values())
+else:
+    insight_report_names = [insight_name_to_report_mapping[insight] for insight in insight_names]
 table_schema = dbutils.widgets.get("SCHEMA TO WRITE TO")
 
 # COMMAND ----------
