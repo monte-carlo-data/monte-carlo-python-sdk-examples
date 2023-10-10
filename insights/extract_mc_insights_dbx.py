@@ -1,4 +1,22 @@
 # Databricks notebook source
+# MAGIC %md # Instructions
+# MAGIC ## What is this?
+# MAGIC This notebook will download insights from Monte Carlo using the Monte Carlo API and then load them into Delta Table(s). Each insight will be loaded to its own Delta Table. This script will create / replace the Delta Table each time it is run. The table names will be "mcd_insight_insightname"
+# MAGIC
+# MAGIC ## Prerequisites
+# MAGIC * Through the Monte Carlo UI create an API token.
+# MAGIC * Store the Token ID and Token Value in a DBX Secret key repo named 'monte-carlo-creds' with the keys 'mcd-id' and 'mcd-token'
+# MAGIC     * Alternatively you can set the ID and Token in this notebook direclty by editing the cell of this notebook named 'Find/Set API Credentials'
+# MAGIC * This script will not create a _schema_ for you. It is assumed that the schema you provide already exists.
+# MAGIC
+# MAGIC ## Running the notebook
+# MAGIC * After the 'Create User Input Widgets' command is run, there will be two drop down widgets at the top of the notebook
+# MAGIC   * INSIGHTS TO DOWNLOAD: Lets you select which insight(s) you want to downlaod. The default will be ALL. If you want to only download a set of specific insights, de-select ALL and select the insights you want.
+# MAGIC   * SCHEMA TO WRITE TO: The schema under which the Delta Tables will be created/replaced.
+# MAGIC * Run the rest of the commands to download the insights from Monte Carlo and import them to Databricks
+
+# COMMAND ----------
+
 # MAGIC %md # Environment Setup
 
 # COMMAND ----------
@@ -11,8 +29,8 @@
 
 # DBTITLE 1,Find/Set API Credentials
 # Monte Carlo Credentials stored in DBX Secret Key Repo called "monte-carlo-creds":
-mcd_id = dbutils.secrets.get(scope = "monte-carlo-creds", key = "mc-id")
-mcd_token = dbutils.secrets.get(scope = "monte-carlo-creds", key = "mc-token")
+mcd_id = dbutils.secrets.get(scope="monte-carlo-creds", key="mcd-id")
+mcd_token = dbutils.secrets.get(scope="monte-carlo-creds", key="mcd-token")
 
 # Other variables which you can customize:
 mcd_profile = ""
@@ -53,8 +71,11 @@ dbutils.widgets.text("SCHEMA TO WRITE TO", "mcd_insights")
 insight_names = dbutils.widgets.get("INSIGHTS TO DOWNLOAD").split(',')
 
 # If ALL is in list of insight_names selected, even if other individual insights are selected, we will download all insights
-if 'ALL' in insight_names:
-    insight_report_names = list(insight_name_to_report_mapping.values())
+if insight_names == ['ALL']:
+    insight_report_names = [insight_name_to_report_mapping[insight] for insight in
+                            list(insight_name_to_report_mapping.keys())]
+elif 'ALL' in insight_names:
+    raise Exception("De-select 'ALL' from Insights to Download if you want to pick individual insights to download.")
 else:
     insight_report_names = [insight_name_to_report_mapping[insight] for insight in insight_names]
 table_schema = dbutils.widgets.get("SCHEMA TO WRITE TO")
