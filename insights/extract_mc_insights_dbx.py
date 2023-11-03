@@ -72,12 +72,12 @@ insight_names = dbutils.widgets.get("INSIGHTS TO DOWNLOAD").split(',')
 
 # If ALL is in list of insight_names selected, even if other individual insights are selected, we will download all insights
 if insight_names == ['ALL']:
-    insight_report_names = [insight_name_to_report_mapping[insight] for insight in
+    insight_report_names = [(insight, insight_name_to_report_mapping[insight]) for insight in
                             list(insight_name_to_report_mapping.keys())]
 elif 'ALL' in insight_names:
     raise Exception("De-select 'ALL' from Insights to Download if you want to pick individual insights to download.")
 else:
-    insight_report_names = [insight_name_to_report_mapping[insight] for insight in insight_names]
+    insight_report_names = [(insight, insight_name_to_report_mapping[insight]) for insight in insight_names]
 table_schema = dbutils.widgets.get("SCHEMA TO WRITE TO")
 
 # COMMAND ----------
@@ -96,16 +96,20 @@ from datetime import *
 client = Client(session=Session(mcd_id=mcd_id, mcd_token=mcd_token,mcd_profile=mcd_profile))
 today = datetime.today()
 
-for i in range(len(insight_report_names)):
-    print("Looking for Insight Report: {}".format(insight_report_names[i]))
+for insight, report in insight_report_names:
+    print("Looking for Insight Report: {}".format(insight))
     query=Query()
-    query.get_report_url(insight_name=insight_names[i],report_name=insight_report_names[i]).__fields__('url')
+    query.get_report_url(insight_name=insight,report_name=report).__fields__('url')
     report_url=client(query).get_report_url.url
+    if not report_url:
+        print("Insight Report {} is not available right now.".format(insight))
+        print("\n")
+        continue
     r = requests.get(report_url).content
     
     # Customize the naming scheme of the loaded tables here:
-    table_name = "mcd_insight_" + insight_names[i]
-    filename = insight_report_names[i]
+    table_name = "mcd_insight_" + insight
+    filename = report
     
     #Read data into pandas to convert to csv
     df=pd.read_csv(io.StringIO(r.decode('utf-8')))  
