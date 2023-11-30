@@ -49,4 +49,4 @@ if __name__ == '__main__':
 	#-------------------------------------------------------
 	monitor_lists = monitor_aggregator(mcd_id,mcd_token)
 	delete_custom_rules(mcd_id,mcd_token,monitor_lists[0])
-	delete_monitors(mcd_id,mcd_token,monitor_lists[1])
+	delete_monitor(mcd_id,mcd_token,monitor_lists[1])
