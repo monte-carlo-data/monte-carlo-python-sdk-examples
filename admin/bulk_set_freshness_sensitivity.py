@@ -1,6 +1,6 @@
 #INSTRUCTIONS:
-#1.Create a CSV with 2 columns: [full_table_id, minimum sensitivity delay in minutes]
-#2. Run this script, providing the mcdId, mcdToken, DWId,and CSV
+#1.Create a CSV with 2 columns: [full_table_id, sensitivity (must be upper case with the following values: LOW, MEDIUM, HIGH)]
+#2. Run this script, providing the mcdId, mcdToken, DWId, and CSV
 #Limitation:
 #This will make 1 request per table, so 10,000/day request limit via API is still a consideration
 
@@ -57,9 +57,9 @@ def bulkSetFreshnessSensitivity(mcdId,mcdToken,csvFileName,mconDict):
 				imported_sensitivity_counter+=1
 				print("check succeeded " + row[0])
 				mutation=Mutation()
-				mutation.set_sensitivity(event_type="freshness",mcon=mconDict[row[0]],threshold=dict(min_delay=int(row[1]))).__fields__("success")
+				mutation.set_sensitivity(event_type="freshness",mcon=mconDict[row[0]],threshold=dict(level=str(row[1]))).__fields__("success")
 				print(row[0],client(mutation).set_sensitivity,row[1])
-	print("Successfully imported freshness for " + str(imported_sensitivity_counter) + " Tables")
+	print("Successfully imported freshness for " + str(imported_sensitivity_counter) + " tables")
 
 if __name__ == '__main__':
 	#-------------------INPUT VARIABLES---------------------
