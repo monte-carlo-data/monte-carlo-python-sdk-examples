@@ -8,9 +8,9 @@
 #######################################################################################################################
 #                                                    INSTRUCTIONS                                                     #
 #######################################################################################################################
-# 1. Store the mcd_id abd mcd_token variables in a .env file i.e.                                                     #
-#   mcd_id=e18rgrdgscee545e7a80171c332452d0f                                                                          #
-#   mcd_token=TWXcK1lPbJwsmY983rPqgP0xMUQEEv7iVbP8pEJruw8QPRts-BfsGFzs                                                #
+# 1. Store the mcd_id and mcd_token variables in a .env file i.e.                                                     #
+#   mcd_id=replace_with_your_key_id                                                                                   #
+#   mcd_token=replace_with_your_secret                                                                                #
 # 2. The script will read the variables from the .env file and use them to generate a new access token. Expiration is #
 # set to 1 day by default. Update variable 'expiration_in_days' in line 74 to modify the lifetime of the token        #
 # 3. After the new token has been generated, the script will also delete the previous token.                          #
