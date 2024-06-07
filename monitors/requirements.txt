@@ -1,1 +1,2 @@
-pycarlo==0.0.8
+pycarlo==0.8.12
+PyYAML==6.0.1
