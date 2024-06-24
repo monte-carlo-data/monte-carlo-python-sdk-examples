@@ -7,6 +7,7 @@ from pycarlo.core import Client, Query, Mutation, Session
 from typing import Optional
 
 BATCH = 100
+OUTPUT_FILE = "monitors_to_migrate.csv"
 
 
 def get_table_query(warehouse_id: str, schema: str, batch_size: Optional[int] = BATCH, after: Optional[str] = None) -> Query:
@@ -34,7 +35,7 @@ def get_table_query(warehouse_id: str, schema: str, batch_size: Optional[int] = 
     return query
 
 
-def get_rule_monitors_query(warehouse_id, batch_size: Optional[int] = BATCH, after: Optional[str] = None) -> Query:
+def get_rule_monitors_query(warehouse_id: str, batch_size: Optional[int] = BATCH, after: Optional[str] = None) -> Query:
     """Retrieve custom rule monitors for a particular warehouse.
 
         Args:
@@ -56,7 +57,7 @@ def get_rule_monitors_query(warehouse_id, batch_size: Optional[int] = BATCH, aft
     return query
 
 
-def get_monitors_query(schema, batch_size: Optional[int] = BATCH, after: Optional[int] = 0) -> Query:
+def get_monitors_query(schema: str, batch_size: Optional[int] = BATCH, after: Optional[int] = 0) -> Query:
     """Retrieve all monitors based on search criteria.
 
             Args:
@@ -96,6 +97,26 @@ def validate_cli():
         print(f" [ ✔ success ] validation complete\n")
 
 
+def validate_project_dir(directory: str) -> Path:
+    """Retrieve all monitors based on search criteria.
+
+        Args:
+            directory(str): Project directory.
+
+        Returns:
+            Path: Full path to file containing list of tables.
+
+    """
+
+    project_dir = Path(directory)
+    file_path = None
+
+    if project_dir.is_dir():
+        file_path = project_dir / OUTPUT_FILE
+
+    return file_path
+
+
 if __name__ == '__main__':
 
     # Capture Command Line Arguments
@@ -118,23 +139,30 @@ if __name__ == '__main__':
     migrate_parser.add_argument('--profile', '-p', required=False, default="default",
                                 help='Specify an MCD profile name. Uses default otherwise')
     migrate_parser.add_argument('--namespace', '-n', required=False,
-                                help='Namespace for the migrated monitors. Defaults to --schema if not set')
-    migrate_parser.add_argument('--schema', '-s', required=True,
-                                help='Schema Name. If UI contains database include it i.e. <database>:<schema>')
+                                help='Namespace for the migrated monitors.')
+    migrate_parser.add_argument('--directory', '-d', required=True,
+                                help="Project directory where output files from 'export' action were generated.")
     migrate_parser.add_argument('--force', '-f', required=False, action='store_true',
                                 help='Run WITHOUT dry-run mode')
 
     cleanup_parser = subparsers.add_parser('cleanup', help="Removes old monitors.")
+    cleanup_parser.add_argument('--profile', '-p', required=False, default="default",
+                               help='Specify an MCD profile name. Uses default otherwise')
+    cleanup_parser.add_argument('--directory', '-d', required=True,
+                                help="Project directory where output files from 'export' action were generated.")
 
     args = parser.parse_args()
 
     # Initialize variables
     profile = args.profile
-    if not args.namespace:
-        if args.schema:
-            namespace = args.schema
-        else:
-            namespace = None
+    if 'namespace' not in args:
+        if 'schema' in args:
+            if args.schema:
+                namespace = args.schema
+            else:
+                namespace = None
+        elif 'directory' in args:
+            namespace = args.directory.split('/')[-1]
     else:
         namespace = args.namespace
 
@@ -144,12 +172,12 @@ if __name__ == '__main__':
     configs.read(profile_path)
     mcd_id_current = configs[profile]['mcd_id']
     mcd_token_current = configs[profile]['mcd_token']
-    filename = "monitors_to_migrate.csv"
 
     client = Client(session=Session(mcd_id=mcd_id_current, mcd_token=mcd_token_current))
     print(f"Running utility using '{args.profile}' profile")
     if args.commands.lower() == 'cleanup':
-        if Path(filename).is_file():
+        filename = validate_project_dir(args.directory)
+        if filename:
             print("- Step 1: Validating montecarlo cli...")
             validate_cli()
             # Remove monitors
@@ -207,7 +235,10 @@ if __name__ == '__main__':
         if len(monitors) > 0:
             print(f" [ ✔ success ] {len(monitors)} custom monitors found\n")
             # Write monitor ids to CSV
-            print(f"- Step 2: Write custom monitor ids to {filename}...")
+            file_path = Path(os.path.abspath(__file__)).parent / "output" / schema_search.replace(':', '-')
+            file_path.mkdir(parents=True, exist_ok=True)
+            print(f"- Step 2: Writing custom monitor ids to output file...")
+            filename = file_path / OUTPUT_FILE
             with open(filename, 'w') as csvfile:
                 for mon_id in monitors:
                     csvfile.write(f"{mon_id}\n")
@@ -218,7 +249,7 @@ if __name__ == '__main__':
 
             print("- Step 4: Exporting monitors to monitors-as-code...")
             cmd_args = ["montecarlo", "--profile", profile, "monitors", "convert-to-mac",
-                        "--namespace", namespace, "--project-dir", f"output/{schema_search.replace(':', '-')}",
+                        "--namespace", namespace, "--project-dir", file_path / "cli",
                         "--monitors-file", "monitors_to_migrate.csv", "--dry-run"]
             cmd = subprocess.run(cmd_args,
                                  capture_output=True, text=True)
@@ -233,20 +264,26 @@ if __name__ == '__main__':
         else:
             print(f" [ - warning ] {len(monitors)} custom monitors found matching search criteria")
     elif args.commands.lower() == 'migrate':
-        print("- Step 1: Validating montecarlo cli...")
-        validate_cli()
 
-        print("- Step 2: Applying monitor changes...")
-        cmd_args = ["montecarlo", "--profile", profile, "monitors", "apply",
-                    "--namespace", namespace, "--project-dir", f"output/{args.schema.replace(':', '-')}",
-                    "--dry-run"]
-        if args.force:
-            del cmd_args[-1]
+        filename = validate_project_dir(args.directory)
+        if filename:
+            print("- Step 1: Validating montecarlo cli...")
+            validate_cli()
 
-        cmd = subprocess.run(cmd_args, capture_output=True, text=True)
-        if cmd.returncode != 0:
-            print(" [ 𐄂 failure ] an error occurred")
-            print(f"{cmd.stdout}")
-            exit(cmd.returncode)
+            print("- Step 2: Applying monitor changes...")
+            cmd_args = ["montecarlo", "--profile", profile, "monitors", "apply",
+                        "--namespace", namespace, "--project-dir", filename.parent / "cli",
+                        "--dry-run"]
+            if args.force:
+                del cmd_args[-1]
+
+            cmd = subprocess.run(cmd_args, capture_output=True, text=True)
+            if cmd.returncode != 0:
+                print(" [ 𐄂 failure ] an error occurred")
+                print(f"{cmd.stdout}")
+                print(f"{cmd.stderr}")
+                exit(cmd.returncode)
+            else:
+                print(f" [ ✔ success ] migration completed")
         else:
-            print(f" [ ✔ success ] migration completed")
+            print("[ 𐄂 failure ] unable to locate file containing monitors to remove")
