@@ -191,7 +191,7 @@ if __name__ == '__main__':
                     count += 1
                 print(f" [ ✔ success ] cleanup completed. {count} monitors removed")
         else:
-            print("Unable to locate 'cleanup.txt'. Make sure the 'export' and 'migrate' commands were previously run")
+            print("Unable to locate output file. Make sure the 'export' and 'migrate' commands were previously run")
     elif args.commands.lower() == 'export':
         dw_id = args.warehouse
         schema_search = args.schema
