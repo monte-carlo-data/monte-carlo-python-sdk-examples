@@ -188,14 +188,19 @@ if __name__ == '__main__':
             logger.info("- Step 1: Validating montecarlo cli...")
             validate_cli()
             # Remove monitors
-            with open(filename, 'r') as to_remove:
+            with open(filename) as to_remove:
                 count = 0
-                for monitor in to_remove:
+                monitors = to_remove.read().splitlines()
+                for monitor in monitors:
                     mutation = Mutation()
                     mutation.delete_monitor(monitor_id=monitor)
-                    res = client(mutation).delete_monitor
-                    logger.info(f"Monitor [{monitor}] deleted successfully")
-                    count += 1
+                    try:
+                        res = client(mutation).delete_monitor
+                        logger.debug(f"Monitor [{monitor}] deleted successfully")
+                        count += 1
+                    except:
+                        logger.debug(f"Unable to delete monitor [{monitor}]")
+                        continue
                 logger.info(f" [ ✔ success ] cleanup completed. {count} monitors removed")
         else:
             logger.info("Unable to locate output file. Make sure the 'export' and 'migrate' commands were previously run")
@@ -262,7 +267,6 @@ if __name__ == '__main__':
 
             logger.info("- Step 4: Exporting monitors to monitors-as-code...")
             mc_monitors_path = file_path / "cli"
-            mc_monitors_path.mkdir(parents=True, exist_ok=True)
             cmd_args = ["montecarlo", "--profile", profile, "monitors", "convert-to-mac",
                         "--namespace", namespace, "--project-dir", mc_monitors_path,
                         "--monitors-file", file_path / "monitors_to_migrate.csv", "--dry-run"]
@@ -291,14 +295,17 @@ if __name__ == '__main__':
                         "--dry-run"]
             if args.force:
                 del cmd_args[-1]
+                cmd = subprocess.run(cmd_args, capture_output=True, text=True, input="y")
+            else:
+                cmd = subprocess.run(cmd_args, capture_output=True, text=True)
 
-            cmd = subprocess.run(cmd_args, capture_output=True, text=True)
             if cmd.returncode != 0:
                 logger.info(" [ 𐄂 failure ] an error occurred")
                 logger.info(f"{cmd.stdout}")
                 logger.info(f"{cmd.stderr}")
                 exit(cmd.returncode)
             else:
+                logger.info(f"{cmd.stdout}")
                 logger.info(f" [ ✔ success ] migration completed")
         else:
             logger.info("[ 𐄂 failure ] unable to locate file containing monitors to remove")
