@@ -23,7 +23,8 @@ logging_config = dict(
                 'file': {'class': 'logging.FileHandler',
                          'formatter': 'standard',
                          'level': logging.DEBUG,
-                         'filename': f"{__file__.split('.')[0]}-{datetime.date.today()}.log"},
+                         'filename': f"{__file__.split('.')[0]}-{datetime.date.today()}.log",
+                         'encoding': "utf-8"},
                 'console': {'class': 'logging.StreamHandler',
                             'formatter': 'console',
                             'level': logging.INFO,
@@ -49,10 +50,9 @@ def get_rule_monitors_query(warehouse_id: str, batch_size: Optional[int] = BATCH
             Query: Formed MC Query object.
 
     """
-
     query = Query()
     get_custom_rules = query.get_custom_rules(first=batch_size, warehouse_uuid=warehouse_id, **(dict(after=after) if after else {}))
-    get_custom_rules.edges.node.__fields__("uuid", "rule_type")
+    get_custom_rules.edges.node.__fields__("uuid", "rule_type", "is_paused")
     get_custom_rules.edges.node.queries(first=batch_size).edges.node.__fields__("uuid", "entities")
     get_custom_rules.page_info.__fields__(end_cursor=True)
     get_custom_rules.page_info.__fields__("has_next_page")
@@ -96,7 +96,7 @@ def validate_cli():
         logger.info(proc.stderr)
         exit(proc.returncode)
     else:
-        logger.info(f" [ ✔ success ] validation complete\n")
+        logger.info(f" [ ✔ success ] validation complete")
 
 
 def validate_project_dir(directory: str) -> Path:
@@ -117,6 +117,18 @@ def validate_project_dir(directory: str) -> Path:
         file_path = project_dir / OUTPUT_FILE
 
     return file_path
+
+
+def split_message(message: str):
+    """Retrieve all monitors based on search criteria.
+
+        Args:
+            message(str): Output from stdout or stderr.
+
+    """
+    for line in message.split('\n'):
+        if line != '':
+            logger.info(line)
 
 
 if __name__ == '__main__':
@@ -185,7 +197,7 @@ if __name__ == '__main__':
     if args.commands.lower() == 'cleanup':
         filename = validate_project_dir(args.directory)
         if filename:
-            logger.info("- Step 1: Validating montecarlo cli...")
+            logger.info("* Step 1: Validating montecarlo cli...")
             validate_cli()
             # Remove monitors
             with open(filename) as to_remove:
@@ -211,7 +223,7 @@ if __name__ == '__main__':
         warehouses = [warehouse.uuid for warehouse in res.account.warehouses]
         schema_search = args.schema
 
-        logger.info(f"- Step 1: Retrieving custom monitors for schema {schema_search}...")
+        logger.info(f"* Step 1: Retrieving custom monitors for schema {schema_search}...")
         monitors = []
         for dw_id in warehouses:
             cursor = None
@@ -219,12 +231,13 @@ if __name__ == '__main__':
                 response = client(get_rule_monitors_query(warehouse_id=dw_id, after=cursor)).get_custom_rules
                 if len(response.edges) > 0:
                     for edge in response.edges:
-                        if len(edge.node.queries.edges) > 0:
-                            for node in edge.node.queries.edges:
-                                if node.node.entities:
-                                    if schema_search in [ent.split('.')[0] for ent in node.node.entities]:
-                                        logger.debug(f"\t• Monitor of type {edge.node.rule_type} found in {node.node.entities}")
-                                        monitors.append(edge.node.uuid)
+                        if not edge.node.is_paused:
+                            if len(edge.node.queries.edges) > 0:
+                                for node in edge.node.queries.edges:
+                                    if node.node.entities:
+                                        if schema_search in [ent.split('.')[0] for ent in node.node.entities]:
+                                            logger.debug(f"\t• Monitor of type {edge.node.rule_type} found in {node.node.entities}")
+                                            monitors.append(edge.node.uuid)
                 if response.page_info.has_next_page:
                     cursor = response.page_info.end_cursor
                 else:
@@ -251,21 +264,21 @@ if __name__ == '__main__':
         # using set() to remove duplicated from list, if any
         monitors = list(set(monitors))
         if len(monitors) > 0:
-            logger.info(f" [ ✔ success ] {len(monitors)} custom monitors found\n")
+            logger.info(f" [ ✔ success ] {len(monitors)} custom monitors found")
             # Write monitor ids to CSV
-            file_path = Path(os.path.abspath(__file__)).parent / "output" / schema_search.replace(':', '-')
+            file_path = Path(os.path.abspath(__file__)).parent / "output" / namespace.replace(':', '-')
             file_path.mkdir(parents=True, exist_ok=True)
-            logger.info(f"- Step 2: Writing custom monitor ids to output file...")
+            logger.info(f"* Step 2: Writing custom monitor ids to output file...")
             filename = file_path / OUTPUT_FILE
             with open(filename, 'w') as csvfile:
                 for mon_id in monitors:
                     csvfile.write(f"{mon_id}\n")
-            logger.info(f" [ ✔ success ] monitor ids exported\n")
+            logger.info(f" [ ✔ success ] monitor ids exported")
 
-            logger.info("- Step 3: Validating montecarlo cli...")
+            logger.info("* Step 3: Validating montecarlo cli...")
             validate_cli()
 
-            logger.info("- Step 4: Exporting monitors to monitors-as-code...")
+            logger.info("* Step 4: Exporting monitors to monitors-as-code...")
             mc_monitors_path = file_path / "cli"
             cmd_args = ["montecarlo", "--profile", profile, "monitors", "convert-to-mac",
                         "--namespace", namespace, "--project-dir", mc_monitors_path,
@@ -274,12 +287,12 @@ if __name__ == '__main__':
                                  capture_output=True, text=True)
             if cmd.returncode != 0:
                 logger.info(" [ 𐄂 failure ] an error occurred")
-                logger.info(f"{cmd.stderr}")
+                split_message(cmd.stderr)
                 exit(cmd.returncode)
             else:
                 logger.info(f" [ ✔ success ] export completed")
-                logger.info(cmd.stdout)
-                logger.info(f"Modify the 'monitors.yml' file under output/{schema_search.replace(':', '-')}")
+                split_message(cmd.stdout)
+                logger.info(f"Modify the 'monitors.yml' file under output/{namespace.replace(':', '-')}")
         else:
             logger.info(f" [ - warning ] {len(monitors)} custom monitors found matching search criteria")
     elif args.commands.lower() == 'migrate':
@@ -301,11 +314,11 @@ if __name__ == '__main__':
 
             if cmd.returncode != 0:
                 logger.info(" [ 𐄂 failure ] an error occurred")
-                logger.info(f"{cmd.stdout}")
-                logger.info(f"{cmd.stderr}")
+                split_message(cmd.stdout)
+                split_message(cmd.stderr)
                 exit(cmd.returncode)
             else:
-                logger.info(f"{cmd.stdout}")
+                split_message(cmd.stdout)
                 logger.info(f" [ ✔ success ] migration completed")
         else:
             logger.info("[ 𐄂 failure ] unable to locate file containing monitors to remove")
