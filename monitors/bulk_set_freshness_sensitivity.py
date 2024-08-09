@@ -1,5 +1,5 @@
 #INSTRUCTIONS:
-#1.Create a CSV with 2 columns: [full_table_id, sensitivity (must be upper case with the following values: LOW, MEDIUM, HIGH)]
+#1.Create a CSV with 2 columns: [full_table_id, threshold type, sensitivity type,  (must be upper case with the following values: LOW, MEDIUM, HIGH)]
 #2. Run this script, providing the mcdId, mcdToken, DWId, and CSV
 #Limitation:
 #This will make 1 request per table, so 10,000/day request limit via API is still a consideration
@@ -75,3 +75,39 @@ if __name__ == '__main__':
 		warehouse_id = getDefaultWarehouse(mcd_id,mcd_token)
 		mcon_dict = getMcons(mcd_id,mcd_token,warehouse_id)
 		bulkSetFreshnessSensitivity(mcd_id,mcd_token,csv_file,mcon_dict)
+
+
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from monitors import *
+
+# Initialize logger
+util_name = __file__.split('/')[-1].split('.')[0]
+logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
+coloredlogs.install(level='INFO', fmt='%(asctime)s %(levelname)s - %(message)s')
+
+
+class SetFreshnessSensitivity(Monitors):
+
+	def __init__(self, profile, config_file: str = None, progress: Progress = None):
+		"""Creates an instance of SetFreshnessSensitivity.
+
+		Args:
+			profile(str): Profile to use stored in montecarlo cli.
+			config_file (str): Path to the Configuration File.
+			progress(Progress): Progress bar.
+		"""
+
+		super().__init__(profile, config_file, progress)
+		self.progress_bar = progress
+
+	def validate_input_file(self, directory: str) -> Path:
+		"""Ensure contents of inout file satisfy requirements.
+
+		Args:
+			directory(str): Project directory.
+
+		Returns:
+			Path: Full path to file containing list of tables and freshness configuration.
+		"""
