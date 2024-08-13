@@ -1,10 +1,10 @@
 import datetime
 import subprocess
-import logging
 import configparser
 import os
 import boto3
 import requests
+import lib.helpers.constants as const
 from pycognito import aws_srp
 from botocore.exceptions import ClientError
 from contextlib import nullcontext
@@ -22,8 +22,6 @@ class MCAuth(object):
 
         self.profile = "default" if not profile else profile
         self.profile_file = os.path.expanduser("~/.mcd/profiles.ini")
-        self.client_id = "7om30cblkad8fb19c4hdjkmme9"
-        self.pool_id = "us-east-1_OQBptzZme"
         self.progress = progress
         self._configs = configs
         self._ini = self.__read_ini()
@@ -79,13 +77,14 @@ class MCAuth(object):
         res = self.client(query).get_token_metadata
 
         threshold = 7
-        token_expiration = [token.expiration_time.astimezone(datetime.UTC) for token in res if token.id == self.mcd_id_current][0]
+        token_info = [token for token in res if token.id == self.mcd_id_current]
+        token_expiration = token_info[0].expiration_time.astimezone(datetime.UTC) if len(token_info) > 0 else datetime.datetime.now(datetime.UTC)
         expires_in_seconds = (token_expiration - datetime.datetime.now(datetime.UTC)).total_seconds()
 
         # Ask user (threshold) days before expiration if the token should be regenerated
         if expires_in_seconds <= (86400 * threshold):
             with sdk_helpers.PauseProgress(self.progress) if self.progress else nullcontext():
-                regenerate = Confirm.ask(f"the token associated with '{self.profile}' will expire in "
+                regenerate = Confirm.ask(f"The token associated with '{self.profile}' will expire in "
                                          f"{int(expires_in_seconds/3600)} hours. Do you want to create a new one?")
             if regenerate:
                 self.delete_token(self.create_token())
@@ -103,7 +102,7 @@ class MCAuth(object):
             client = Client(session=Session(mcd_id=self.mcd_id_current, mcd_token=self._mcd_token_current))
             res = client(mutation).create_access_token
             self.mcd_id_current = res.access_token.id
-            self.mcd_token_current = res.access_token.token
+            self._mcd_token_current = res.access_token.token
             LOGGER.info("token created successfully")
             self.__store_token()
             self.client = Client(session=Session(mcd_id=self.mcd_id_current, mcd_token=self._mcd_token_current))
@@ -128,10 +127,15 @@ class MCAuth(object):
     def __store_token(self):
         """ """
 
-        self._ini.set(self.profile, 'mcd_id', self.mcd_id_current)
-        self._ini.set(self.profile, 'mcd_token', self._mcd_token_current)
-        with open(self.profile_file, 'w') as configfile:
-            self._ini.write(configfile)
+        try:
+            self._ini.set(self.profile, 'mcd_id', self.mcd_id_current)
+            self._ini.set(self.profile, 'mcd_token', self._mcd_token_current)
+            with open(self.profile_file, 'w') as configfile:
+                self._ini.write(configfile)
+            LOGGER.info("token stored successfully")
+        except Exception as e:
+            LOGGER.error(f"unable to store token - {e}")
+            exit(1)
 
     def __mc_create_token(self):
         """ """
@@ -150,8 +154,8 @@ class MCAuth(object):
         srp_helper = aws_srp.AWSSRP(
             username=username,
             password=password,
-            pool_id=self.pool_id,
-            client_id=self.client_id,
+            pool_id=const.POOL_ID,
+            client_id=const.CLIENT_ID,
             client_secret=None,
             client=bc
         )
@@ -159,7 +163,7 @@ class MCAuth(object):
         try:
             auth_tokens = srp_helper.authenticate_user()
         except ClientError:
-            LOGGER.error(ClientError)
+            LOGGER.error("unable to authenticate user. Ensure username/password is correct")
             exit(1)
 
         headers = {"Authorization": f"Bearer {auth_tokens['AuthenticationResult']['IdToken']}"}

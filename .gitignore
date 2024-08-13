@@ -1,0 +1,11 @@
+*.xlsx
+*.csv
+*.log
+*.bkp
+.env
+.idea
+venv
+.DS_Store
+output
+keys
+__pycache__

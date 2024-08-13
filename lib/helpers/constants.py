@@ -1,0 +1,20 @@
+from enum import Enum
+
+
+class MonitorTypes(str, Enum):
+    CATEGORIES = 'CATEGORIES'
+    STATS = 'STATS'
+    JSON_SCHEMA = 'JSON_SCHEMA'
+    CUSTOM_SQL = 'CUSTOM_SQL'
+    FIELD_QUALITY = 'FIELD_QUALITY'
+    FRESHNESS = 'FRESHNESS'
+    TABLE_METRIC = 'TABLE_METRIC'
+    VOLUME = 'VOLUME'
+    QUERY_PERF = 'QUERY_PERF'
+    COMPARISON = 'COMPARISON'
+    VALIDATION = 'VALIDATION'
+    SCHEMA = 'SCHEMA'
+
+
+CLIENT_ID = "7om30cblkad8fb19c4hdjkmme9"
+POOL_ID = "us-east-1_OQBptzZme"

@@ -1,57 +1,87 @@
-#INSTRUCTIONS:
-#NOTE: Only works if Monte Carlo environment has a single resource connected
-#1. Pass your api keys when running script, and pass name of .yml file you want to write to
-#2. .YML file will be written, which can then be used when syncing Monitors-as-code
-#3. If you have more than 500 ui monitors to migrate edit line 36 to a higher number
-#4. Monitor 'name' is now a mandatory parameter to apply MaC: type y or N to get monitor names included in the yaml export
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from monitors import *
 
-from pycarlo.core import Client, Query, Mutation, Session
-from typing import Optional
-import yaml
-from yaml.loader import SafeLoader
-import textwrap
+# Initialize logger
+util_name = __file__.split('/')[-1].split('.')[0]
+logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
+coloredlogs.install(level='INFO', fmt='%(asctime)s %(levelname)s - %(message)s')
 
-def get_monitors_query(limit: Optional[int] = 1000) -> Query:
-	query = Query()
-	get_monitors = query.get_monitors(limit=limit,namespaces=["ui"])
-	get_monitors.__fields__("uuid","monitor_type","resource_id")
-	return query
 
-def export_yaml_template(monitorUuids, exportName):
-	query=Query()
-	get_yaml = query.export_monte_carlo_config_templates(monitor_uuids=monitorUuids, export_name=exportName)
-	get_yaml.__fields__("config_template_as_yaml")
-	return query
+class BulkExportMonitors(Monitors):
 
-def bulk_export_yaml(mcdId,mcdToken,fileName,exportName):
-	client=Client(session=Session(mcd_id=mcdId,mcd_token=mcdToken))
-	response = client(get_monitors_query()).get_monitors
-	monitor_list=[]
-	monitor_yaml = {}
-	counter=0
-	with open(fileName,"w") as yaml_file:
-		yaml_file.write("montecarlo:\n")
-		for monitor in response:
-			counter+=1
-			monitor_list.append(monitor.uuid)
-			if len(monitor_list) == 500:
-				monitor_yaml = client(export_yaml_template(monitor_list,exportName)).export_monte_carlo_config_templates
-				yaml_file.write(textwrap.indent(monitor_yaml["config_template_as_yaml"],prefix="  "))
-				print(monitor_yaml["config_template_as_yaml"])
-				print("counter: " + str(counter))
-				monitor_list=[]
-				continue
-		monitor_yaml = client(export_yaml_template(monitor_list)).export_monte_carlo_config_templates
-		yaml_file.write(textwrap.indent(monitor_yaml["config_template_as_yaml"],prefix="  "))
-		print(monitor_yaml["config_template_as_yaml"])
-		print("counter: END")
+    def __init__(self, profile, config_file: str = None):
+        """Creates an instance of BulkExportMonitors.
+
+        Args:
+            config_file (str): Path to the Configuration File.
+        """
+
+        super().__init__(profile,  config_file)
+        self.OUTPUT_FILE = "monitors.yaml"
+
+    def bulk_export_yaml(self, export_name):
+        """
+
+        """
+
+        monitor_list, _ = self.get_ui_monitors()
+        # Split list of monitors in batches of 500
+        batches = sdk_helpers.batch_objects(monitor_list, 500)
+        file_path = self.OUTPUT_DIR / util_name
+        file_path.mkdir(parents=True, exist_ok=True)
+        with open(file_path / self.OUTPUT_FILE, "w") as yaml_file:
+            yaml_file.write("montecarlo:\n")
+            for batch in batches:
+                monitor_yaml = self.export_yaml_template(batch, export_name)
+                yaml_file.write(textwrap.indent(monitor_yaml["config_template_as_yaml"], prefix="  "))
+
+        LOGGER.info(f"exported ui monitors to yaml templates successfully")
+
+
+def main(*args, **kwargs):
+
+    # Capture Command Line Arguments
+    formatter = lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=120)
+    parser = argparse.ArgumentParser(description="\n[ BULK EXPORT UI MONITORS ]\n\n\t• YML file will be written, which can then"
+                                                 " be used when syncing Monitors-as-Code. \n\t• Monitor 'name' is now a "
+                                                 "mandatory parameter to apply MaC. Set -e flag to 'y'\n\t  to get monitor names "
+                                                 "included in the yaml export.".expandtabs(4), formatter_class=formatter)
+    parser._optionals.title = "Options"
+    parser._positionals.title = "Commands"
+    m = ''
+
+    parser.add_argument('--profile', '-p', required=False, default="default",
+                               help='Specify an MCD profile name. Uses default otherwise', metavar=m)
+    parser.add_argument('--export-name', '-e', required=False, choices=['y', 'n'], default='n',
+                        help='Include the resource name in the export?', metavar=m)
+
+    if not args[0]:
+        args = parser.parse_args(*args, **kwargs)
+    else:
+        sdk_helpers.dump_help(parser, main, *args)
+        args = parser.parse_args(*args, **kwargs)
+
+    # Initialize variables
+    profile = args.profile
+    if args.export_name == 'n':
+        export_name = False
+    else:
+        export_name = True
+
+    # Initialize Util and run actions
+    try:
+        LOGGER.info(f"running utility using '{args.profile}' profile")
+        util = BulkExportMonitors(profile)
+        util.bulk_export_yaml(export_name)
+    except Exception as e:
+        LOGGER.error(e, exc_info=False)
+        print(traceback.format_exc())
+    finally:
+        LOGGER.info('rotating old log files')
+        LogRotater.rotate_logs(retention_period=7)
+
 
 if __name__ == '__main__':
-	#-------------------INPUT VARIABLES---------------------
-	mcd_id = input("MCD ID: ")
-	mcd_token = input("MCD Token: ")
-	# dw_id = input("DW ID: ")
-	filename = input("YAML Filename: ")
-    	exportname = input("Do you want to include monitor 'name' in the yaml? (y/N) ").lower().strip() == "y"
-	#-------------------------------------------------------
-	bulk_export_yaml(mcd_id,mcd_token,filename)
+    main()

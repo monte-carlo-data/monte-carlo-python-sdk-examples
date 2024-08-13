@@ -1,17 +1,7 @@
 import os
-import argparse
-import logging.config
 import sys
-import yaml
-import subprocess
-import shutil
-import textwrap
-import traceback
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from pathlib import Path
-from lib.util import Util
-from lib.helpers.logs import LoggingConfigs, LogHelper, LogRotater
-from lib.helpers import sdk_helpers
+from monitors import *
 
 # Initialize logger
 util_name = __file__.split('/')[-1].split('.')[0]
@@ -19,7 +9,7 @@ logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
 LOGGER = logging.getLogger()
 
 
-class DeduplicateMonitors(Util):
+class DeduplicateMetricMonitors(Util):
 
     def __init__(self, profile, config_file: str = None):
         """Creates an instance of DeduplicateMonitors.
@@ -29,7 +19,7 @@ class DeduplicateMonitors(Util):
         """
 
         super().__init__(profile,  config_file)
-        self.OUTPUT_FILE = "monitors.yaml"
+        self.OUTPUT_FILE = None
 
     def deduplicate(self, input_file: str, namespace: str):
         """
@@ -37,63 +27,68 @@ class DeduplicateMonitors(Util):
         """
 
         self.OUTPUT_DIR = Path(''.join(input_file.split('/')[:-1]))
+        self.OUTPUT_FILE = ''.join(input_file.split('/')[-1])
         file_path = None
 
         if self.OUTPUT_DIR.is_dir():
             file_path = self.OUTPUT_DIR / self.OUTPUT_FILE
 
         if file_path and Path(input_file).is_file():
-            shutil.copyfile(input_file, file_path)
+            LOGGER.info("backing up input file...")
+            shutil.copyfile(input_file, f"{file_path}.bkp")
+            with open(input_file, 'r') as file:
+                yaml_dict = yaml.safe_load(file)
+                metric_monitors = yaml_dict.get("montecarlo").get("field_health")
+
+            # Initializing compare keys
+            comp_keys = ['table', 'timestamp_field', 'lookback_days', 'aggregation_time_interval', 'connection_name',
+                         'use_important_fields', 'use_partition_clause', 'metric']
+
+            # Compare each monitor with the rest to find possible duplicates
+            duplicate_indexes = []
+            for i in range(len(metric_monitors) - 1):
+                for j in range(i + 1, len(metric_monitors)):
+                    if all(metric_monitors[i].get(key) == metric_monitors[j].get(key) for key in comp_keys):
+                        LOGGER.debug(f"possible duplicate monitors in [{i} "
+                                     f"{metric_monitors[i].get('table')}] <=> [{j} - {metric_monitors[j].get('table')}]")
+                        duplicate_indexes.append(i)
+
+            # Remove duplicates
+            LOGGER.info("removing duplicate metric monitors...")
+            for index in duplicate_indexes:
+                del metric_monitors[index]
+
+            # Save as new file
+            with open(file_path, 'w') as outfile:
+                yaml.safe_dump(yaml_dict, outfile, sort_keys=False)
+
+            LOGGER.info("validating updated YML configuration...")
+            if not namespace:
+                cmd = subprocess.run(["montecarlo", "--profile", self.profile, "monitors", "apply", "--project-dir",
+                                      self.OUTPUT_DIR, "--option-file", self.OUTPUT_FILE, "--dry-run"],
+                                     capture_output=True, text=True)
+            else:
+                cmd = subprocess.run(["montecarlo", "--profile", self.profile, "monitors", "apply", "--project-dir",
+                                      self.OUTPUT_DIR, "--option-file", self.OUTPUT_FILE, "--namespace", namespace,
+                                      "--dry-run"], capture_output=True, text=True)
+            if cmd.returncode != 0:
+                LogHelper.split_message(cmd.stdout, logging.ERROR)
+                LOGGER.error("an error occurred")
+                LogHelper.split_message(cmd.stderr, logging.ERROR)
+                exit(cmd.returncode)
+            else:
+                LOGGER.info(f"export completed")
+                LogHelper.split_message(cmd.stdout)
         else:
             LOGGER.error(f"unable to locate input file: {input_file}")
-
-        with open(input_file, 'r') as file:
-            yaml_dict = yaml.safe_load(file)
-            metric_monitors = yaml_dict.get("montecarlo").get("field_health")
-
-        # Initializing compare keys
-        comp_keys = ['table', 'timestamp_field', 'lookback_days', 'aggregation_time_interval', 'connection_name',
-                     'use_important_fields', 'use_partition_clause', 'metric']
-
-        # Compare each monitor with the rest to find possible duplicates
-        duplicate_indexes = []
-        for i in range(len(metric_monitors) - 1):
-            for j in range(i + 1, len(metric_monitors)):
-                if all(metric_monitors[i].get(key) == metric_monitors[j].get(key) for key in comp_keys):
-                    print(f"Possible duplicate monitors in {input_file}: {i} - {metric_monitors[i].get('table')} "
-                          f"and {j} - {metric_monitors[j].get('table')}")
-                    duplicate_indexes.append(i)
-
-        # Remove duplicates
-        for index in duplicate_indexes:
-            del metric_monitors[index]
-
-        # Save as new file
-        with open('monitors.yml', 'w') as outfile:
-            yaml.safe_dump(yaml_dict, outfile, sort_keys=False)
-
-        LOGGER.info("executing new configuration dry-run...")
-        if not namespace:
-            cmd = subprocess.run(["montecarlo", "--profile", self.profile, "monitors", "apply", "--dry-run"],
-                                 capture_output=True, text=True)
-        else:
-            cmd = subprocess.run(["montecarlo", "--profile", self.profile, "monitors", "apply",
-                                  "--namespace", namespace, "--dry-run"],
-                                 capture_output=True, text=True)
-        if cmd.returncode != 0:
-            LOGGER.error("an error occurred")
-            LogHelper.split_message(cmd.stderr, logging.ERROR)
-            exit(cmd.returncode)
-        else:
-            LOGGER.info(f"export completed")
-            LogHelper.split_message(cmd.stdout)
 
 
 def main(*args, **kwargs):
 
     # Capture Command Line Arguments
     formatter = lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=120)
-    parser = argparse.ArgumentParser(description='Find and remove duplicate monitors'.expandtabs(4),
+    parser = argparse.ArgumentParser(description='\n[ DEDUPLICATE METRIC MONITORS MaC ]\n\n\tFinds and removes duplicate'
+                                                 ' metric monitors from an input YML file'.expandtabs(4),
                                      formatter_class=formatter)
     parser._optionals.title = "Options"
     parser._positionals.title = "Commands"
@@ -119,7 +114,7 @@ def main(*args, **kwargs):
     # Initialize Util and run in given mode
     try:
         LOGGER.info(f"running utility using '{args.profile}' profile")
-        util = DeduplicateMonitors(profile)
+        util = DeduplicateMetricMonitors(profile)
         util.deduplicate(args.input, namespace)
     except Exception as e:
         LOGGER.error(e, exc_info=False)

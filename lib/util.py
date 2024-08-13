@@ -1,10 +1,10 @@
 import configparser
-import logging
 import io
 import re
 import sys
 import os
-from .helpers.encryption import ConfigEncryption
+import lib.helpers.constants as const
+from lib.helpers.encryption import ConfigEncryption
 from pathlib import Path
 from lib.auth import mc_auth
 from typing import Optional
@@ -121,8 +121,7 @@ class Tables(Util):
 
         """
 
-        if not batch_size:
-            batch_size = self.BATCH
+        batch_size = self.BATCH if batch_size is None else batch_size
 
         query = Query()
         get_tables = query.get_tables(first=batch_size, dw_id=dw_id, search=f"{search}", is_deleted=False,
@@ -134,17 +133,18 @@ class Tables(Util):
 
         return query
 
-    def get_mcons(self, dw_id: str, search: str = "") -> list:
-        """
+    def get_mcons(self, dw_id: str, search: str = "") -> tuple:
+        """Get tables' mcon values
 
             Args:
                 dw_id(str): Warehouse UUID from MC.
                 search(str): Database/Schema combination to apply in search filter.
 
             Returns:
-                list: List of table mcons.
+                tuple: List of table mcons and extended raw response.
         """
 
+        raw_items = []
         mcons = []
         cursor = None
         while True:
@@ -156,7 +156,30 @@ class Tables(Util):
             else:
                 break
 
-        return mcons
+        return mcons, raw_items
+
+    def get_mcons_by_fulltableid(self, warehouse_id: str, full_table_ids: list[str]):
+        """ """
+
+        raw_items = []
+        mcons = []
+        cursor = None
+        while True:
+            response = self.auth.client(self.get_tables(dw_id=warehouse_id, search="", after=cursor)).get_tables
+            if len(response.edges) > 0:
+                raw_items.extend(response.edges)
+                for table in response.edges:
+                    if table.node.full_table_id in full_table_ids:
+                        mcons.append(table.node.mcon)
+                    else:
+                        LOGGER.debug(f"{table.node.full_table_id} not found")
+
+            if response.page_info.has_next_page:
+                cursor = response.page_info.end_cursor
+            else:
+                break
+
+        return mcons, raw_items
 
 
 class Monitors(Util):
@@ -195,8 +218,7 @@ class Monitors(Util):
 
         """
 
-        if not batch_size:
-            batch_size = self.BATCH
+        batch_size = self.BATCH if batch_size is None else batch_size
 
         query = Query()
         get_custom_rules = query.get_custom_rules(first=batch_size, warehouse_uuid=warehouse_id,
@@ -208,7 +230,7 @@ class Monitors(Util):
 
         return query
 
-    def get_custom_rules_with_assets(self, dw_id: str, asset: str) -> list:
+    def get_custom_rules_with_assets(self, dw_id: str, asset: str) -> tuple:
         """ Identify custom rules that contain an asset.
 
             Args:
@@ -216,15 +238,17 @@ class Monitors(Util):
                 asset(str): Project/Dataset/Table name.
 
             Returns:
-                list: List of custom rules referencing an asset.
+                tuple: List of custom rules referencing an asset and extended raw response.
         """
 
+        raw_items = []
         monitors = []
         cursor = None
         while True:
             response = self.auth.client(
                 self.get_custom_rules(warehouse_id=dw_id, after=cursor)).get_custom_rules
             if len(response.edges) > 0:
+                raw_items.extend(response)
                 for edge in response.edges:
                     if not edge.node.is_paused:
                         if len(edge.node.queries.edges) > 0:
@@ -240,9 +264,9 @@ class Monitors(Util):
             else:
                 break
 
-        return monitors
+        return monitors, raw_items
 
-    def get_monitors_by_entities(self, dw_id: str, asset: str, batch_size: Optional[int] = None) -> list:
+    def get_monitors_by_entities(self, dw_id: str, asset: str, batch_size: Optional[int] = None) -> tuple:
         """Retrieve all monitors based on search criteria. This method only accounts for UNPAUSED and UI monitors.
 
                 Args:
@@ -251,13 +275,13 @@ class Monitors(Util):
                     batch_size(int): Limit of results returned by the response.
 
                 Returns:
-                    list: List of custom monitors matching search.
+                    tuple: List of custom monitors matching search and extended raw response.
 
         """
 
-        if not batch_size:
-            batch_size = self.BATCH
+        batch_size = self.BATCH if batch_size is None else batch_size
 
+        raw_items = []
         monitors = []
         skip_records = 0
         while True:
@@ -268,25 +292,72 @@ class Monitors(Util):
                                     "namespace")
             response = self.auth.client(query).get_monitors
             if len(response) > 0:
+                raw_items.extend(response)
                 for monitor in response:
                     if monitor.monitor_status != "PAUSED" and monitor.namespace == 'ui':
                         if monitor.resource_id == dw_id:
                             monitors.append(monitor.uuid)
                             LOGGER.debug(
-                                f"• monitor of type {monitor.monitor_type} found in {monitor.entities} - "
+                                f"monitor of type {monitor.monitor_type} found in {monitor.entities} - "
                                 f"{monitor.uuid} - getMonitors")
 
             skip_records += self.BATCH
             if len(response) < self.BATCH:
                 break
 
-        return monitors
+        return monitors, raw_items
 
-    def get_ui_monitors(self, batch_size: Optional[int] = None, after: Optional[int] = None) -> list:
+    def get_monitors_by_type(self, dw_id: str, types: list[const.MonitorTypes], is_ootb_replacement: bool = False,
+                             mcons: list[str] = None, batch_size: Optional[int] = None) -> tuple:
+        """Retrieve all monitors under monitor type(s).
 
-        if not batch_size:
-            batch_size = self.BATCH
+                Args:
+                    dw_id(str): Warehouse UUID from MC.
+                    types(list[MonitorTypes]): Supported monitor type.
+                    is_ootb_replacement(bool): Replacement of OOTB Freshness or Volume monitors.
+                    mcons(list[str]): Filter by associated entities.
+                    batch_size(int): Limit of results returned by the response.
 
+                Returns:
+                    tuple: List of custom monitors matching search and extended raw response.
+
+        """
+
+        batch_size = self.BATCH if batch_size is None else batch_size
+        mcons = [] if mcons is None else mcons
+
+        raw_items = []
+        monitors = []
+        skip_records = 0
+        while True:
+            query = Query()
+            get_monitors = query.get_monitors(monitor_types=types, mcons=mcons, is_ootb_replacement=is_ootb_replacement,
+                                              limit=batch_size, offset=skip_records)
+            get_monitors.__fields__("uuid", "description", "monitor_type", "monitor_status", "resource_id", "name",
+                                    "rule_comparisons")
+            get_monitors.schedule_config.__fields__("interval_crontab", "interval_minutes",
+                                                    "schedule_type", "start_time", "timezone")
+            response = self.auth.client(query).get_monitors
+            if len(response) > 0:
+                raw_items.extend(response)
+                for monitor in response:
+                    if monitor.resource_id == dw_id:
+                        monitors.append(monitor.uuid)
+                        LOGGER.debug(
+                            f"monitor of type {monitor.monitor_type} found - "
+                            f"{monitor.uuid} - getMonitors")
+
+            skip_records += self.BATCH
+            if len(response) < self.BATCH:
+                break
+
+        return monitors, raw_items
+
+    def get_ui_monitors(self, batch_size: Optional[int] = None, after: Optional[int] = None) -> tuple:
+
+        batch_size = self.BATCH if batch_size is None else batch_size
+
+        raw_items = []
         monitors = []
         skip_records = 0
         while True:
@@ -295,6 +366,7 @@ class Monitors(Util):
             get_monitors.__fields__("uuid", "monitor_type", "resource_id")
             response = self.auth.client(query).get_monitors
             if len(response) > 0:
+                raw_items.extend(response)
                 for monitor in response:
                     monitors.append(monitor.uuid)
 
@@ -302,7 +374,7 @@ class Monitors(Util):
             if len(response) < self.BATCH:
                 break
 
-        return monitors
+        return monitors, raw_items
 
     def export_yaml_template(self, monitor_uuids: list[str], export_name) -> dict:
         """Export MaC configuration.

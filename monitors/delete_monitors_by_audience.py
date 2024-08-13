@@ -42,11 +42,15 @@ def delete_custom_rules(mcdId,mcdToken,rule_list):
 		print(client(mutation).delete_custom_rule)
 
 
-if __name__ == '__main__':
-	#-------------------INPUT VARIABLES---------------------
+def main(*args, **kwargs):
+	# -------------------INPUT VARIABLES---------------------
 	mcd_id = input("MCD ID: ")
 	mcd_token = input("MCD Token: ")
-	#-------------------------------------------------------
-	monitor_lists = monitor_aggregator(mcd_id,mcd_token)
-	delete_custom_rules(mcd_id,mcd_token,monitor_lists[0])
-	delete_monitor(mcd_id,mcd_token,monitor_lists[1])
+	# -------------------------------------------------------
+	monitor_lists = monitor_aggregator(mcd_id, mcd_token)
+	delete_custom_rules(mcd_id, mcd_token, monitor_lists[0])
+	delete_monitor(mcd_id, mcd_token, monitor_lists[1])
+
+
+if __name__ == '__main__':
+	main()
