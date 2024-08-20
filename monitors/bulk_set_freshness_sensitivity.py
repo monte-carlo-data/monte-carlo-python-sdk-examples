@@ -1,86 +1,18 @@
-#INSTRUCTIONS:
-#1.Create a CSV with 2 columns: [full_table_id, threshold type, sensitivity type,  (must be upper case with the following values: LOW, MEDIUM, HIGH)]
-#2. Run this script, providing the mcdId, mcdToken, DWId, and CSV
-#Limitation:
-#This will make 1 request per table, so 10,000/day request limit via API is still a consideration
-
-from pycarlo.core import Client, Query, Mutation, Session
-import csv
-from typing import Optional
-
-def getDefaultWarehouse(mcdId,mcdToken):
-	client=Client(session=Session(mcd_id=mcdId,mcd_token=mcdToken))
-	query=Query()
-	query.get_user().account.warehouses.__fields__("name","connection_type","uuid")
-	warehouses=client(query).get_user.account.warehouses
-	if len(warehouses) == 1:
-		return warehouses[0].uuid
-	elif len(warehouses) > 1:
-		for val in warehouses:
-			print("Name: " + val.name + ", Connection Type: " + val.connection_type + ", UUID: " + val.uuid)
-		print("Error: More than one warehouse, please re-run with UUID value")
-		quit()
-
-def get_table_query(dwId,first: Optional[int] = 1000, after: Optional[str] = None) -> Query:
-    query = Query()
-    get_tables = query.get_tables(first=first, dw_id=dwId, is_deleted=False, **(dict(after=after) if after else {}))
-    get_tables.edges.node.__fields__("full_table_id","mcon")
-    get_tables.page_info.__fields__(end_cursor=True)
-    get_tables.page_info.__fields__("has_next_page")
-    return query
-
-def getMcons(mcdId,mcdToken,dwId):
-	client=Client(session=Session(mcd_id=mcdId,mcd_token=mcdToken))
-	table_mcon_dict={}
-	next_token=None
-	while True:
-		response = client(get_table_query(dwId=dwId,after=next_token)).get_tables
-		print(response)
-		for table in response.edges:
-			table_mcon_dict[table.node.full_table_id] = table.node.mcon
-		if response.page_info.has_next_page:
-			next_token = response.page_info.end_cursor
-		else:
-			break
-	return table_mcon_dict
-
-def bulkSetFreshnessSensitivity(mcdId,mcdToken,csvFileName,mconDict):
-	client=Client(session=Session(mcd_id=mcdId,mcd_token=mcdToken))
-	imported_sensitivity_counter=0
-	with open(csvFileName,"r") as sensitivitiesToImport:
-		sensitivities=csv.reader(sensitivitiesToImport,delimiter=",")
-		for row in sensitivities:
-			if row[0] not in mconDict.keys():
-				print("check failed: " +row[0])
-				continue
-			if mconDict[row[0]]:
-				imported_sensitivity_counter+=1
-				print("check succeeded " + row[0])
-				mutation=Mutation()
-				mutation.set_sensitivity(event_type="freshness",mcon=mconDict[row[0]],threshold=dict(level=str(row[1]))).__fields__("success")
-				print(row[0],client(mutation).set_sensitivity,row[1])
-	print("Successfully imported freshness for " + str(imported_sensitivity_counter) + " tables")
-
-if __name__ == '__main__':
-	#-------------------INPUT VARIABLES---------------------
-	mcd_id = input("MCD ID: ")
-	mcd_token = input("MCD Token: ")
-	dw_id = input("DW ID: ")
-	csv_file = input("CSV Filename: ")
-	#-------------------------------------------------------
-	if dw_id and csv_file:
-		mcon_dict=getMcons(mcd_id,mcd_token,dw_id)
-		bulkSetFreshnessSensitivity(mcd_id,mcd_token,csv_file,mcon_dict)
-	if csv_file and not dw_id:
-		warehouse_id = getDefaultWarehouse(mcd_id,mcd_token)
-		mcon_dict = getMcons(mcd_id,mcd_token,warehouse_id)
-		bulkSetFreshnessSensitivity(mcd_id,mcd_token,csv_file,mcon_dict)
-
+# #INSTRUCTIONS:
+#
+# LOW, MEDIUM, HIGH)]
+# #2. Run this script, providing the mcdId, mcdToken, DWId, and CSV
+# #Limitation:
+# #This will make 1 request per table, so 10,000/day request limit via API is still a consideration
+#
 
 import os
 import sys
+import csv
+import datetime
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from monitors import *
+from cron_validator import CronValidator
 
 # Initialize logger
 util_name = __file__.split('/')[-1].split('.')[0]
@@ -88,7 +20,7 @@ logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
 coloredlogs.install(level='INFO', fmt='%(asctime)s %(levelname)s - %(message)s')
 
 
-class SetFreshnessSensitivity(Monitors):
+class SetFreshnessSensitivity(Monitors, Tables):
 
 	def __init__(self, profile, config_file: str = None, progress: Progress = None):
 		"""Creates an instance of SetFreshnessSensitivity.
@@ -101,13 +33,169 @@ class SetFreshnessSensitivity(Monitors):
 
 		super().__init__(profile, config_file, progress)
 		self.progress_bar = progress
+		self.rule_operator_type = None
 
-	def validate_input_file(self, directory: str) -> Path:
-		"""Ensure contents of inout file satisfy requirements.
+	def validate_input_file(self, input_file: str) -> any:
+		"""Ensure contents of input file satisfy requirements.
 
 		Args:
-			directory(str): Project directory.
+			input_file(str): Path to input file.
 
 		Returns:
-			Path: Full path to file containing list of tables and freshness configuration.
+			Any: Dictionary with mappings or None.
+
 		"""
+
+		file_path = Path(input_file)
+		LOGGER.info(f"starting input file validation...")
+		if file_path.is_file():
+			input_tables = None
+			auto_required_cols = ['full_table_id', 'sensitivity']
+			explicit_required_cols = ['full_table_id', 'updated_in_last_minutes', 'cron']
+			try:
+				with open(file_path, 'r') as file:
+					reader = csv.DictReader(file)
+					input_tables = {}
+					for index, row in enumerate(reader):
+						col_count = len(row)
+						if col_count == 3:
+							self.rule_operator_type = 'EXPLICIT'
+							for col in explicit_required_cols:
+								if not row.get(col):
+									raise ValueError(f"value for '{col}' is missing: line {index + 1}")
+							try:
+								int(row["updated_in_last_minutes"])
+								try:
+									CronValidator.parse(row["cron"])
+									input_tables[row["full_table_id"]] = row
+								except ValueError:
+									raise ValueError(
+										f"value under 'cron' is invalid: line {index + 1}")
+							except ValueError:
+								raise ValueError(
+									f"value under 'updated_in_last_minutes' must be an integer: line {index + 1}")
+						elif col_count == 2:
+							self.rule_operator_type = 'AUTO'
+							for col in auto_required_cols:
+								if not row.get(col):
+									raise ValueError(f"value for '{col}' is missing: line {index + 1}")
+							if row["sensitivity"].upper() not in ['LOW', 'MEDIUM', 'HIGH']:
+								raise ValueError(f"sensitivity must be LOW, MEDIUM or HIGH: line {index + 1}")
+							input_tables[row["full_table_id"]] = row
+						else:
+							raise ValueError(f"{col_count} columns present in CSV, either {explicit_required_cols} OR "
+							                 f"{auto_required_cols} are required")
+
+			except ValueError as e:
+				LOGGER.error(f"errors found in file: {e}")
+
+			return input_tables
+
+	def update_freshness_thresholds(self, input_dict: dict, warehouse_id: str):
+
+		if input_dict:
+			LOGGER.info(f"updating freshness rules...")
+			input_fulltableids = [item['full_table_id'] for item in input_dict.values()]
+			input_mcons, _ = self.get_mcons_by_fulltableid(warehouse_id, input_fulltableids)
+			monitor_ids, response = self.get_monitors_by_type(warehouse_id, [const.MonitorTypes.FRESHNESS], True, input_mcons)
+			for index, full_table_id in enumerate(input_fulltableids):
+				try:
+					input_mcons[index]
+				except IndexError:
+					LOGGER.warning(f"skipping {full_table_id} - asset not found")
+					continue
+
+				payload = {
+					"dw_id": warehouse_id,
+					"replaces_ootb": True,
+					"event_rollup_until_changed": True,
+					"timezone": "UTC",
+					"schedule_config": {
+						"schedule_type": "FIXED",
+						"start_time": datetime.datetime.strftime(sdk_helpers.hour_rounder(datetime.datetime.now()),
+						                                        "%Y-%m-%dT%H:%M:%S.%fZ"),
+					},
+					"comparisons": [
+						{
+							"full_table_id": input_mcons[index],
+							"comparison_type": "FRESHNESS",
+						}
+					]
+				}
+
+				if self.rule_operator_type == 'EXPLICIT':
+					payload["schedule_config"]["interval_crontab"] = [input_dict[full_table_id]['cron']]
+					payload["comparisons"][0]["operator"] = 'GT'
+					payload["comparisons"][0]["threshold"] = float(input_dict[full_table_id]['updated_in_last_minutes'])
+				else:
+					payload["schedule_config"]["interval_minutes"] = 60
+					payload["comparisons"][0]["operator"] = 'AUTO'
+					payload["comparisons"][0]["threshold_sensitivity"] = input_dict[full_table_id]['sensitivity'].upper()
+
+				for monitor in response:
+					if monitor.rule_comparisons[0].full_table_id == full_table_id:
+						payload["description"] = monitor.description
+						payload["custom_rule_uuid"] = monitor.uuid
+						break
+
+				if not payload.get("description"):
+					payload["description"] = f"Freshness rule for {full_table_id}"
+
+				mutation = Mutation()
+				mutation.create_or_update_freshness_custom_rule(**payload)
+				try:
+					self.progress_bar.update(self.progress_bar.tasks[0].id, advance=50 / len(input_fulltableids))
+					_ = self.auth.client(mutation).create_or_update_freshness_custom_rule
+					LOGGER.info(f"freshness threshold updated successfully for table {full_table_id}")
+				except Exception as e:
+					LOGGER.error(f"unable to update freshness threshold for table {full_table_id}")
+					LOGGER.debug(e)
+					continue
+
+
+def main(*args, **kwargs):
+
+	# Capture Command Line Arguments
+	formatter = lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=120)
+	parser = argparse.ArgumentParser(description="\n[ SET FRESHNESS SENSITIVITY ]\n\n\t• If updating to an explicit "
+	                                             "threshold, create a CSV with 3 columns: [full_table_id,cron,updated_"
+	                                             "in_last_minutes]\n\t• If updating to an automatic threshold, create a "
+	                                             "CSV with 2 columns: [full_table_id,sensitivity]. Sensitivity must be "
+	                                             "one of LOW, MEDIUM or HIGH.".expandtabs(4), formatter_class=formatter)
+	parser._optionals.title = "Options"
+	parser._positionals.title = "Commands"
+	m = ''
+
+	parser.add_argument('--profile', '-p', required=False, default="default",
+	                    help='Specify an MCD profile name. Uses default otherwise', metavar=m)
+	parser.add_argument('--input-file', '-i', required=True,
+	                    help='Relative or absolute path to csv file containing freshness monitor configuration',
+	                    metavar=m)
+	parser.add_argument('--warehouse', '-w', required=True, help='Warehouse ID', metavar=m)
+
+	if not args[0]:
+		args = parser.parse_args(*args, **kwargs)
+	else:
+		sdk_helpers.dump_help(parser, main, *args)
+		args = parser.parse_args(*args, **kwargs)
+
+	# Initialize variables
+	profile = args.profile
+	input_file = args.input_file
+	dw_id = args.warehouse
+
+	# Initialize Util
+	try:
+		with (Progress() as progress):
+			task = progress.add_task("[yellow][RUNNING]...", total=100)
+			LogRotater.rotate_logs(retention_period=7)
+			progress.update(task, advance=25)
+
+			LOGGER.info(f"running utility using '{args.profile}' profile")
+			util = SetFreshnessSensitivity(profile, progress=progress)
+			util.update_freshness_thresholds(util.validate_input_file(input_file), dw_id)
+			progress.update(task, description="[dodger_blue2][COMPLETE]", advance=100)
+
+	except Exception as e:
+		LOGGER.error(e, exc_info=False)
+		print(traceback.format_exc())

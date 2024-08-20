@@ -1,157 +1,169 @@
-import configparser
 import os
-import argparse
-from pycarlo.core import Client, Query, Mutation, Session
-from typing import Optional
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from monitors import *
 
-BATCH = 100
-
-
-def enable_schema_usage(dw_id: str, project: str, dataset: str, rules: list) -> Mutation:
-	"""Enable tables under a schema to be monitored.
-
-		Args:
-			dw_id(str): Warehouse UUID from MC.
-			dataset(str): Target for tables in the project/database.
-			project(str): Target for tables in the dataset/schema.
-			rules(list(dict)): List of rules for deciding which tables are monitored.
-
-		Returns:
-			Mutation: Formed MC Mutation object.
-
-	"""
-
-	not_none_params = {k: v for k, v in locals().items() if v is not None}
-	mutation = Mutation()
-	update_monitored_table_rule_list = mutation.update_monitored_table_rule_list(**not_none_params)
-	update_monitored_table_rule_list.__fields__("id")
-	return mutation
+# Initialize logger
+util_name = __file__.split('/')[-1].split('.')[0]
+logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
+LOGGER = logging.getLogger()
 
 
-def get_table_query(dw_id: str, search: str, first: Optional[int] = BATCH, after: Optional[str] = None) -> Query:
-	"""Retrieve table information based on warehouse id and search parameter.
+class RowCountMonitoring(Monitors, Tables, Admin):
+
+	def __init__(self, profile, config_file: str = None):
+		"""Creates an instance of RowCountMonitoring.
 
 		Args:
-			dw_id(str): Warehouse UUID from MC.
-			search(str): Database/Schema combination to apply in search filter.
-			first(int): Limit of results returned by the response.
-			after(str): Cursor value for next batch.
+			config_file (str): Path to the Configuration File.
+		"""
+
+		super().__init__(profile,  config_file)
+		self.enabled = True
+
+	def create_rules(self, input_file: str) -> dict:
+		""" Reads input file and creates rules dictionary
+
+		Args:
+			input_file(str): Path of the file containing asset entries.
 
 		Returns:
-			Query: Formed MC Query object.
+			dict: Rule dictionary configuration.
+		
+		"""
 
-	"""
+		if Path(input_file).is_file():
+			mapping = {}
+			with open(input_file, 'r') as input_tables:
+				for table in input_tables:
+					table_filter, table_name = table.split('.')
+					content = {'project': table_filter[:table_filter.index(":")],
+							   'dataset': table_filter[table_filter.index(":") + 1:],
+							   'rules': []}
+					if not mapping.get(table_filter):
+						mapping[table_filter] = content
 
-	query = Query()
-	# Add . at the end of the schema to search to ensure delimiter is respected
-	get_tables = query.get_tables(first=first, dw_id=dw_id, search=f"{search}.", is_deleted=False, is_monitored=True,
-								  **(dict(after=after) if after else {}))
-	get_tables.edges.node.__fields__("full_table_id", "mcon", "table_type")
-	get_tables.page_info.__fields__(end_cursor=True)
-	get_tables.page_info.__fields__("has_next_page")
-	return query
+					if self.enabled:
+						rule = {
+							"isExclude": False,
+							"ruleType": "wildcard_pattern",
+							"tableRuleAttribute": "table_id",
+							"tableRuleText": table_name
+						}
+						mapping[table_filter]['rules'].append(rule)
+
+			return mapping
+
+		else:
+			LOGGER.error(f"unable to locate input file: {input_file}")
+			sys.exit(1)
+
+	def apply_rules(self, operation: str, warehouse_id: str, rule_configs: dict):
+		""" Submits rules for processing only if # of rules is <= 100
+
+		Args:
+			operation(str): Enable or Disable.
+			warehouse_id(str): UUID of warehouse.
+			rule_configs(dict): Dictionary containing rule configuration.
+		"""
+
+		for db_schema in rule_configs:
+			project = rule_configs[db_schema]['project']
+			dataset = rule_configs[db_schema]['dataset']
+			rules = rule_configs[db_schema]['rules']
+			if len(rules) > 100:
+				LOGGER.error("monitor rules allow at most 100 entries. Use a different method to filter out tables i.e."
+				             " pattern match")
+				exit(0)
+			LOGGER.info(f"{operation.title()} usage for database/schema combination "
+			            f"[{project}:{dataset}] and warehouse [{warehouse_id}]...")
+			response = (self.auth.client(self.enable_schema_usage(dw_id=warehouse_id, project=project,
+			                                                            dataset=dataset, rules=rules))
+			            .update_monitored_table_rule_list)
+			if isinstance(response, list):
+				LOGGER.info(f"monitor rule {operation}d\n")
+			else:
+				LOGGER.error("an error occurred")
+				exit(1)
+
+			if self.enabled:
+				LOGGER.info(f"retrieving monitored tables matching [{project}:{dataset}] and warehouse "
+				            f"[{warehouse_id}]...")
+				view_mcons = []
+				cursor = None
+				while True:
+					response = (self.auth.client(self.get_tables(dw_id=warehouse_id,
+					                                                    search=f"{project}:{dataset}",
+					                                                    after=cursor)).get_tables)
+					for table in response.edges:
+						if table.node.table_type in ['VIEW', 'EXTERNAL']:
+							view_mcons.append(table.node.mcon)
+					if response.page_info.has_next_page:
+						cursor = response.page_info.end_cursor
+					else:
+						break
+				LOGGER.info(f"assets identified\n")
+
+				LOGGER.info(f"{operation.title()} row count monitoring for views under [{project}:{dataset}] and "
+				            f"warehouse [{warehouse_id}]...")
+				for view in view_mcons:
+					response = self.auth.client(self.enable_row_count(),
+					                            variables={"mcon": view, "enabled": self.enabled})
+					if response.toggle_size_collection.enabled:
+						LOGGER.info(f"row count {operation}d for mcon[{view}]")
+					else:
+						LOGGER.error(f"unable to apply {operation.lower()} action")
+						exit(1)
 
 
-if __name__ == '__main__':
-
+def main(*args, **kwargs):
+	
 	# Capture Command Line Arguments
-	parser = argparse.ArgumentParser(description='Enable Usage & Monitoring')
+	formatter = lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=120)
+	parser = argparse.ArgumentParser(description="\n[ BULK ENABLE ROW COUNT MONITORING ]\n\n\tAdds or removes tables"
+												 " from usage settings. It also enables row count monitoring for views"
+												 "/external tables.\n\n\t•NOTE: When 'disable', all rules under the "
+	                                             "schema will be removed.".expandtabs(4), formatter_class=formatter)
+	parser._optionals.title = "Options"
+	parser._positionals.title = "Commands"
+	m = ''
+
 	parser.add_argument('--profile', '-p', required=True, default="default",
 						help='Specify an MCD profile name. Uses default otherwise')
 	parser.add_argument('--warehouse', '-w', required=True,
 						help='Warehouse ID')
 	parser.add_argument('--input', '-i', required=True,
-	                    help='Path to the txt file containing list of full table ids.')
+						help='Path to the txt file containing list of full table ids.')
 	parser.add_argument('--operation', '-o', choices=['enable', 'disable'], required=False, default='enable',
 						help='Enable/Disable tables under usage.')
 
-	args = parser.parse_args()
+	if not args:
+		args = parser.parse_args(*args, **kwargs)
+	else:
+		sdk_helpers.dump_help(parser, main, *args)
+		args = parser.parse_args(*args, **kwargs)
 
 	# Initialize variables
 	profile = args.profile
 	warehouse_id = args.warehouse
 	input_file = args.input
 
-	if args.operation == 'disable':
-		rules = []
-		enabled = False
-	else:
-		enabled = True
-
-	# Read input file and create rules
-	mapping = {}
-	with open(input_file, 'r') as input_tables:
-		for table in input_tables:
-			table_filter, table_name = table.split('.')
-			content = {'project': table_filter[:table_filter.index(":")],
-			           'dataset': table_filter[table_filter.index(":") + 1:],
-			           'rules': []}
-			if not mapping.get(table_filter):
-				mapping[table_filter] = content
-
-			if enabled:
-				rule = {
-					"isExclude": False,
-					"ruleType": "wildcard_pattern",
-					"tableRuleAttribute": "table_id",
-					"tableRuleText": table_name
-				}
-				mapping[table_filter]['rules'].append(rule)
-
-	# Read token variables from CLI default's config path ~/.mcd/profiles.ini
-	configs = configparser.ConfigParser()
-	profile_path = os.path.expanduser("~/.mcd/profiles.ini")
-	configs.read(profile_path)
-	mcd_id_current = configs[profile]['mcd_id']
-	mcd_token_current = configs[profile]['mcd_token']
-
-	client = Client(session=Session(mcd_id=mcd_id_current, mcd_token=mcd_token_current))
-	for db_schema in mapping:
-		project = mapping[db_schema]['project']
-		dataset = mapping[db_schema]['dataset']
-		rules = mapping[db_schema]['rules']
-		if len(rules) > 100:
-			print("Monitor rules allow at most 100 entries. Use a different method to filter out tables i.e. pattern match")
-			exit(0)
-		print(f"- Step 1: {args.operation.title()} usage for database/schema combination "
-		      f"[{project}:{dataset}] and warehouse [{warehouse_id}]...")
-		response = client(enable_schema_usage(dw_id=warehouse_id, project=project, dataset=dataset, rules=rules)).update_monitored_table_rule_list
-		if isinstance(response, list):
-			print(f" [ ✔ success ] monitor rule {args.operation}d\n")
+	# Initialize Util and run actions
+	try:
+		LOGGER.info(f"running utility using '{args.profile}' profile")
+		util = RowCountMonitoring(profile)
+		if args.operation == 'disable':
+			util.enabled = False
 		else:
-			print(" [ 𐄂 failure ] an error occurred")
-			exit(1)
+			util.enabled = True
+		util.apply_rules(args.operation, warehouse_id, util.create_rules(input_file))
+	except Exception as e:
+		LOGGER.error(e, exc_info=False)
+		print(traceback.format_exc())
+	finally:
+		LOGGER.info('rotating old log files')
+		LogRotater.rotate_logs(retention_period=7)
 
-		if enabled:
-			print(f"- Step 2: Retrieving monitored tables matching [{project}:{dataset}] and warehouse [{warehouse_id}]...")
-			view_mcons = []
-			cursor = None
-			while True:
-				response = client(get_table_query(dw_id=warehouse_id, search=f"{project}:{dataset}", after=cursor)).get_tables
-				for table in response.edges:
-					if table.node.table_type in ['VIEW', 'EXTERNAL']:
-						view_mcons.append(table.node.mcon)
-				if response.page_info.has_next_page:
-					next_token = response.page_info.end_cursor
-				else:
-					break
-			print(f" [ ✔ success ] assets identified\n")
 
-			print(f"- Step 3: {args.operation.title()} row count monitoring for views under [{project}:{dataset}] and warehouse [{warehouse_id}]...")
-			enable_row_count_query = f"""
-				mutation updateToggleSizeCollection($mcon: String!, $enabled: Boolean!) {{
-					toggleSizeCollection(
-						mcon: $mcon
-						enabled: $enabled    
-					) {{
-						enabled
-					}}
-				}}
-				"""
-			for view in view_mcons:
-				response = client(enable_row_count_query, variables={"mcon": view, "enabled": enabled})
-				if response.toggle_size_collection.enabled:
-					print(f" [ ✔ success ] row count {args.operation}d for mcon[{view}]")
-				else:
-					print(f" [ 𐄂 failure ] unable to apply {args.operation.lower()} action")
-					exit(1)
+if __name__ == '__main__':
+	main()
