@@ -116,9 +116,9 @@ if __name__ == '__main__':
 	#-------------------INPUT VARIABLES---------------------
 	mcdId = '{Add Key here}'
 	mcdToken = '{Add Token Here}'
-	tag_key = 'dataset name'
-	source_tag_value = 'Environmental (Prod)'
-	destination_tag_value = 'Environmental (QA)'
+	tag_key = '{Add tag key here}'
+	source_tag_value = '{Add source tage here}'
+	destination_tag_value = '{Add destination tag here}'
 	# UUID for s1-Prod-Connection found via API
 	warehouse_uuid = '{Insert Warehouse ID}'
 	#-------------------------------------------------------
