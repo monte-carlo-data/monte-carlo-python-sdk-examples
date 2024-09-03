@@ -1,0 +1,52 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Monte Carlo Data Collector AWS resources IAM role.",
+    "Outputs" : {
+        "RoleExternalId": {
+            "Description": "External ID for the generated role.",
+            "Value": "{{ collector_external_id }}"
+        },
+        "RoleArn": {
+            "Description": "ARN for the generated role.",
+            "Value": {"Fn::GetAtt" : ["McRole", "Arn"] }
+        }
+    },
+    "Resources": {
+        "McRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "AWS": "arn:aws:iam::{{ collector_account_id }}:root"
+                            },
+                            "Action": "sts:AssumeRole",
+                            "Condition": {
+                                "StringEquals": {
+                                    "sts:ExternalId": "{{ collector_external_id }}"
+                                }
+                            }
+                        }
+                    ]
+                },
+                "Policies": [
+                    {% for policy in resource_policies %}
+                    {
+                        "PolicyName": "Policy{{ loop.index }}",
+                        "PolicyDocument": {{ policy }}
+                    }{{ ',' if not loop.last }}
+                    {% endfor %}
+                ],
+                "Tags": [
+                    {
+                        "Key": "MonteCarloData",
+                        "Value": ""
+                    }
+                ]
+            }
+        }
+    }
+}

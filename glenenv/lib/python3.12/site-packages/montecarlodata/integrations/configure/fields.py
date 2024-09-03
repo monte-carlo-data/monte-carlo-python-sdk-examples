@@ -1,0 +1,5 @@
+# Query response fields
+MATCH_AND_CREATE_BI_WH_SRC_GQL_OPERATION = "matchAndCreateBiWarehouseSources"
+MATCH_AND_CREATE_BI_WH_SRC_GQL_RESPONSE_FIELD = "match_and_create_bi_warehouse_sources"
+MATCHING_BI_WH_SRC_GQL_RESPONSE_FIELD = "matching_bi_warehouse_sources"
+MATCH_SUCCESSFUL_GQL_RESPONSE_FIELD = "match_successful"

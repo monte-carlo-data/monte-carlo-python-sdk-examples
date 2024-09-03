@@ -1,0 +1,20 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+        "Effect": "Allow",
+        "Action": "kafka:GetBootstrapBrokers",
+        "Resource": "arn:aws:kafka:{{ region }}:{{ account_id }}:cluster/**"
+    },
+    {
+        "Effect": "Allow",
+        "Action": "kafkaconnect:ListConnectors",
+        "Resource": "arn:aws:kafkaconnect:{{ region }}:{{ account_id }}:*"
+    },
+    {
+        "Effect": "Allow",
+        "Action": "kafkaconnect:DescribeConnector",
+        "Resource": "arn:aws:kafkaconnect:{{ region }}:{{ account_id }}:connector/**"
+    }
+  ]
+}

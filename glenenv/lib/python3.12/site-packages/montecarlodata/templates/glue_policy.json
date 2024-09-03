@@ -1,0 +1,51 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "s3:ListBucket",
+                "s3:GetBucketLocation"
+            ],
+            "Resource": [
+                {% for data_bucket in data_buckets %}
+                "arn:aws:s3:::{{ data_bucket }}"{{ ',' if not loop.last }}
+                {% endfor %}
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": "glue:GetConnections",
+            "Resource": [
+                "arn:aws:glue:{{ region }}:{{ account_id }}:catalog",
+                "arn:aws:glue:{{ region }}:{{ account_id }}:connection/*"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": "glue:GetDatabases",
+            "Resource": [
+                "arn:aws:glue:{{ region }}:{{ account_id }}:catalog",
+                {% for database_name in database_names %}
+                "arn:aws:glue:{{ region }}:{{ account_id }}:database/{{ database_name }}"{{ ',' if not loop.last }}
+                {% endfor %}
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "glue:GetTables",
+                "glue:GetTable",
+                "glue:GetPartitions",
+                "glue:GetPartition"
+            ],
+            "Resource": [
+                "arn:aws:glue:{{ region }}:{{ account_id }}:catalog",
+                {% for database_name in database_names %}
+                "arn:aws:glue:{{ region }}:{{ account_id }}:database/{{ database_name }}",
+                "arn:aws:glue:{{ region }}:{{ account_id }}:table/{{ database_name }}/*"{{ ',' if not loop.last }}
+                {% endfor %}
+            ]
+        }
+    ]
+}
