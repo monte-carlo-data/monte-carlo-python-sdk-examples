@@ -27,15 +27,19 @@ class MCAuth(object):
         self._ini = self.__read_ini()
 
         if self._ini:
-            self.mcd_id_current = self._ini[self.profile].get('mcd_id')
-            self._mcd_token_current = self._ini[self.profile].get('mcd_token')
+            if self._ini.has_section(self.profile):
+                self.mcd_id_current = self._ini[self.profile].get('mcd_id')
+                self._mcd_token_current = self._ini[self.profile].get('mcd_token')
 
-            if not self.mcd_id_current or not self._mcd_token_current:
-                LOGGER.error("authentication id/token missing")
-                return
+                if not self.mcd_id_current or not self._mcd_token_current:
+                    LOGGER.error("authentication id/token missing")
+                    exit(1)
 
-            self.client = Client(session=Session(mcd_id=self.mcd_id_current, mcd_token=self._mcd_token_current))
-            self.validate_cli()
+                self.client = Client(session=Session(mcd_id=self.mcd_id_current, mcd_token=self._mcd_token_current))
+                self.validate_cli()
+            else:
+                LOGGER.error(f"profile '{self.profile}' does not exist")
+                exit(1)
 
     def __read_ini(self):
         """ """

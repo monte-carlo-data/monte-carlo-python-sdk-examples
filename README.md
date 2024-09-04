@@ -35,7 +35,7 @@ In either case, make sure to use python3.12 as the base interpreter
 Use the ```--help/-h``` flag for details on the commands/utilities available.
 
 ```bash
-python3.12 mcdsdksamplerunner.py -h
+python3.12 mcsdksamplerunner.py -h
 ```
 
 If the Monte Carlo CLI has not been configured before, running any utility will prompt for Monte Carlo credentials to 

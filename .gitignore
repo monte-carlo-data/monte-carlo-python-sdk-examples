@@ -2,6 +2,8 @@
 *.csv
 *.log
 *.bkp
+*.yml
+*.yaml
 .env
 .idea
 venv

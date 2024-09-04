@@ -1,12 +1,38 @@
 import sys
+import time
+
+import pytz
 from datetime import datetime, timedelta
 from lib.helpers.logs import LOGGER
 from rich.progress import Progress
+from cronsim import CronSim
 
 
 def hour_rounder(t):
     # Rounds to nearest hour by adding a timedelta hour if minute >= 30
     return t.replace(second=0, microsecond=0, minute=0, hour=t.hour) + timedelta(hours=t.minute // 30)
+
+
+def calculate_interval_minutes(cron: str):
+    """Return interval in minutes for a crontab string"""
+
+    it = CronSim(cron, datetime.now(pytz.UTC))
+    a = next(it)
+    b = next(it)
+    delta = b - a
+    return int(delta.total_seconds() / 60)
+
+
+def link(uri, label=None):
+    """Create clickable link inside terminal"""
+    if label is None:
+        label = uri
+    parameters = ''
+
+    # OSC 8 ; params ; URI ST <name> OSC 8 ;; ST
+    escape_mask = '\033]8;{};{}\033\\{}\033]8;;\033\\'
+
+    return escape_mask.format(parameters, uri, label)
 
 
 def dump_help(parser, func, *args):
@@ -59,6 +85,7 @@ class PauseProgress:
     def _clear_line(self) -> None:
         UP = "\x1b[1A"
         CLEAR = "\x1b[2K"
+
         for _ in self._progress.tasks:
             print(UP + CLEAR + UP)
 

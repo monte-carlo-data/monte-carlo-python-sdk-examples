@@ -9,6 +9,28 @@ LOGGER = logging.getLogger()
 LOGS_DIR = Path(str(Path(os.path.abspath(__file__)).parent.parent.parent) + "/logs")
 
 
+class CustomFormatter(logging.Formatter):
+
+    format = '%(message)s'
+
+    FORMATS = {
+        logging.DEBUG: "[grey]" + format,
+        logging.INFO: "[steel_blue]" + format,
+        logging.WARNING: "[orange3 bold]" + format,
+        logging.ERROR: "[red3 bold]" + format,
+        logging.CRITICAL: "[deep_pink2 bold]" + format
+    }
+
+    def format(self, record):
+        log_fmt = self.FORMATS.get(record.levelno)
+        formatter = logging.Formatter(log_fmt)
+        try:
+            record.msg = record.msg[0].upper() + record.msg[1:]
+        except:
+            record.msg = record.msg
+        return formatter.format(record)
+
+
 class LoggingConfigs(object):
 
     @staticmethod
@@ -26,7 +48,8 @@ class LoggingConfigs(object):
             version=1,
             formatters={
                 'standard': {'format': '%(asctime)s - %(levelname)s - %(message)s'},
-                'console': {'format': '%(levelname)s - %(message)s'}
+                'console': {'()': 'lib.helpers.logs.CustomFormatter',
+                            'format': '%(message)s'}
             },
             handlers={
                 'file': {'class': 'logging.FileHandler',
@@ -34,10 +57,14 @@ class LoggingConfigs(object):
                          'level': logging.DEBUG,
                          'filename': f"{LOGS_DIR}/{util_name}-{datetime.date.today()}.log",
                          'encoding': "utf-8"},
-                'console': {'class': 'logging.StreamHandler',
+                'console': {'class': 'rich.logging.RichHandler',
+                            'show_path': False,
+                            'omit_repeated_times': False,
+                            'markup': True,
+                            'rich_tracebacks': True,
                             'formatter': 'console',
                             'level': logging.INFO,
-                            'stream': 'ext://sys.stdout'}
+                    }
             },
             root={'handlers': ['file', 'console'],
                   'level': logging.NOTSET},
