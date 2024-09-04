@@ -41,6 +41,16 @@ def batch_objects(objects: list, batch_size: int) -> list:
 
     return batches
 
+def parse_input(input_value,delimiter):
+    parsed_list = input_value.split(delimiter)
+    final_list = []
+    for val in parsed_list:
+        while " " == val[0]:
+            val = val[1:]
+        while " " == val[-1]:
+            val = val[:-1]
+        final_list.append(val)
+    return final_list
 
 class PauseProgress:
     def __init__(self, progress: Progress) -> None:

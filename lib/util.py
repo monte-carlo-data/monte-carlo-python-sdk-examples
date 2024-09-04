@@ -307,6 +307,29 @@ class Monitors(Util):
 
         return monitors, raw_items
 
+    def get_monitors_by_audience(self,audiences: list,batch_size: Optional[int] = None,skip_records: Optional[int] = 0) -> tuple:
+
+        batch_size = self.BATCH if batch_size is None else batch_size
+
+        raw_items = []
+        monitors = []
+        skip_records = 0
+        while True:
+            query = Query()
+            get_monitors = query.get_monitors(limit=batch_size, offset=skip_records, labels=audiences)
+            get_monitors.__fields__("uuid", "monitor_type", "resource_id")
+            response = self.auth.client(query).get_monitors
+            if len(response) > 0:
+                raw_items.extend(response)
+                for monitor in response:
+                    monitors.append(monitor.uuid)
+
+            skip_records += self.BATCH
+            if len(response) < self.BATCH:
+                break
+
+        return monitors, raw_items
+
     def get_monitors_by_type(self, dw_id: str, types: list[const.MonitorTypes], is_ootb_replacement: bool = False,
                              mcons: list[str] = None, batch_size: Optional[int] = None) -> tuple:
         """Retrieve all monitors under monitor type(s).
@@ -394,6 +417,16 @@ class Monitors(Util):
         yaml_template = self.auth.client(query).export_monte_carlo_config_templates
 
         return yaml_template
+
+    def delete_monitor(self,monitor_uuid: str) -> Mutation:
+        mutation = Mutation()
+        mutation.delete_monitor(monitor_id=monitor_uuid).__fields__('success')
+        return mutation
+
+    def delete_custom_rule(self,rule_uuid: str) -> Mutation:
+        mutation = Mutation()
+        mutation.delete_custom_rule(uuid=rule_uuid).__fields__('uuid')
+        return mutation
 
     @staticmethod
     def toggle_monitor_state():

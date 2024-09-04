@@ -3,54 +3,97 @@
 #2. Replace empty quotes on line 14 with the Audiences associated with the monitors you want deleted
 #3. Run the script
 
-from pycarlo.core import Client, Query, Mutation, Session
-from typing import Optional
+import os
+import sys
+import csv
+import datetime
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from monitors import *
+from cron_validator import CronValidator
 
-def get_monitors_query(limit: Optional[int] = 1000) -> Query:
-	query = Query()
-	get_monitors = query.get_monitors(limit=limit,labels=[""])
-	get_monitors.__fields__("uuid","monitor_type","resource_id")
-	return query
+# Initialize logger
+util_name = __file__.split('/')[-1].split('.')[0]
+logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
+coloredlogs.install(level='INFO', fmt='%(asctime)s %(levelname)s - %(message)s')
 
-def monitor_aggregator(mcdId,mcdToken):
-	client=Client(session=Session(mcd_id=mcdId,mcd_token=mcdToken))
-	response = client(get_monitors_query()).get_monitors
-	rules = ["VOLUME","CUSTOM_SQL","FRESHNESS"]
-	rule_list=[]
-	monitor_list=[]
-	for monitor in response:
-		if monitor["monitor_type"] in rules:
-			rule_list.append(monitor["uuid"])
-		else:
-			monitor_list.append(monitor["uuid"])
-	return [rule_list,monitor_list]
+class DeleteMonitorsByAudience(Monitors):
+	def __init__(self, profile,config_file: str = None, progress: Progress = None):
+		"""Creates an instance of DeleteMonitorsByAudience.
 
-def delete_monitor(mcdId,mcdToken,monitor_list):
-	client=Client(session=Session(mcd_id=mcdId,mcd_token=mcdToken))
-	for monitor_id in monitor_list:
-		print(monitor_id)
-		mutation=Mutation()
-		mutation.delete_monitor(monitor_id=monitor_id).__fields__('success')
-		print(client(mutation).delete_monitor)
-	
-def delete_custom_rules(mcdId,mcdToken,rule_list):
-	client=Client(session=Session(mcd_id=mcdId,mcd_token=mcdToken))
-	for monitor_id in rule_list:
-		print(monitor_id)
-		mutation=Mutation()
-		mutation.delete_custom_rule(uuid=monitor_id).__fields__('uuid')
-		print(client(mutation).delete_custom_rule)
+		Args:
+			profile(str): Profile to use stored in montecarlo cli.
+			config_file (str): Path to the Configuration File.
+			progress(Progress): Progress bar.
+		"""
 
+		super().__init__(profile, config_file, progress)
+		self.progress_bar = progress
+		self.rule_operator_type = None
+
+
+	def delete_custom_monitors(self,audiences):
+		_,monitors = self.get_monitors_by_audience(audiences)
+		if len(monitors) == 0:
+			LOGGER.error("No monitors exist for given audience(s)")
+			sys.exit(1)
+		LOGGER.info(monitors)
+		rules = [const.MonitorTypes.VOLUME,const.MonitorTypes.CUSTOM_SQL,const.MonitorTypes.FRESHNESS,const.MonitorTypes.FIELD_QUALITY,const.MonitorTypes.COMPARISON,const.MonitorTypes.VALIDATION]
+		for monitor in monitors:
+			self.progress_bar.update(self.progress_bar.tasks[0].id, advance=100 / len(monitors))
+			error = False
+			if monitor["monitor_type"] in rules:
+				response = self.auth.client(self.delete_custom_rule(monitor["uuid"])).delete_custom_rule
+				if not response.uuid:
+					error = True
+			else:
+				response = self.auth.client(self.delete_monitor(monitor["uuid"])).delete_monitor
+				if not response.success:
+					error = True
+			if error:
+				LOGGER.info(f"Deletion Not Successful for: {monitor.uuid}")
+			else:
+				LOGGER.info(f"Deletion Successful for: {monitor.uuid}")
 
 def main(*args, **kwargs):
-	# -------------------INPUT VARIABLES---------------------
-	mcd_id = input("MCD ID: ")
-	mcd_token = input("MCD Token: ")
-	# -------------------------------------------------------
-	monitor_lists = monitor_aggregator(mcd_id, mcd_token)
-	delete_custom_rules(mcd_id, mcd_token, monitor_lists[0])
-	delete_monitor(mcd_id, mcd_token, monitor_lists[1])
 
+	# Capture Command Line Arguments
+	formatter = lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=120)
+	parser = argparse.ArgumentParser(description="\n[ DELETE MONITORS BY AUDIENCE ]\n\n\t• Delete all monitors within "
+												 "a given audience. Provide the audience name to delete when prompted"
+									 .expandtabs(4), formatter_class=formatter)
+	parser._optionals.title = "Options"
+	parser._positionals.title = "Commands"
+	m = ''
+
+	parser.add_argument('--profile', '-p', required=False, default="default",
+						help='Specify an MCD profile name. Uses default otherwise', metavar=m)
+	parser.add_argument('--audience', '-a', required=True,
+						help='Audience for which to delete all monitors. If multiple Audiences, pass all in comma separated list',
+						metavar=m)
+
+	if not args[0]:
+		args = parser.parse_args(*args, **kwargs)
+	else:
+		sdk_helpers.dump_help(parser, main, *args)
+		args = parser.parse_args(*args, **kwargs)
+
+	# Initialize variables
+	audiences = sdk_helpers.parse_input(args.audience,',')
+	profile = args.profile
+
+	try:
+		with (Progress() as progress):
+			task = progress.add_task("[yellow][RUNNING]...", total=100)
+			LogRotater.rotate_logs(retention_period=7)
+
+			LOGGER.info(f"running utility using '{args.profile}' profile")
+			util = DeleteMonitorsByAudience(profile,progress=progress)
+			util.delete_custom_monitors(audiences)
+			progress.update(task, description="[dodger_blue2][COMPLETE]", advance=100)
+
+	except Exception as e:
+		LOGGER.error(e,exc_info=False)
+		print(traceback.format_exc())
 
 if __name__ == '__main__':
 	main()
