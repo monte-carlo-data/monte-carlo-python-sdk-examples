@@ -14,7 +14,6 @@ from cron_validator import CronValidator
 # Initialize logger
 util_name = __file__.split('/')[-1].split('.')[0]
 logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
-coloredlogs.install(level='INFO', fmt='%(asctime)s %(levelname)s - %(message)s')
 
 class DeleteMonitorsByAudience(Monitors):
 	def __init__(self, profile,config_file: str = None, progress: Progress = None):
