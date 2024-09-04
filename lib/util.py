@@ -224,7 +224,7 @@ class Monitors(Util):
         get_custom_rules = query.get_custom_rules(first=batch_size, warehouse_uuid=warehouse_id,
                                                   **(dict(after=after) if after else {}))
         get_custom_rules.edges.node.__fields__("uuid", "rule_type", "is_paused")
-        get_custom_rules.edges.node.queries(first=batch_size).edges.node.__fields__("uuid", "entities")
+        get_custom_rules.edges.node.queries(first=batch_size).edges.node.__fields__("uuid", "entities", "custom_sql")
         get_custom_rules.page_info.__fields__(end_cursor=True)
         get_custom_rules.page_info.__fields__("has_next_page")
 
@@ -353,17 +353,44 @@ class Monitors(Util):
 
         return monitors, raw_items
 
-    def get_ui_monitors(self, batch_size: Optional[int] = None, after: Optional[int] = None) -> tuple:
+    def get_ui_monitors(self, batch_size: Optional[int] = None, skip_records: Optional[int] = 0) -> tuple:
 
         batch_size = self.BATCH if batch_size is None else batch_size
 
         raw_items = []
         monitors = []
-        skip_records = 0
         while True:
             query = Query()
-            get_monitors = query.get_monitors(limit=batch_size, offset=after, namespaces=["ui"])
-            get_monitors.__fields__("uuid", "monitor_type", "resource_id")
+            get_monitors = query.get_monitors(limit=batch_size, offset=skip_records, namespaces=["ui"])
+            get_monitors.__fields__("uuid", "monitor_type", "resource_id", "is_paused", "next_execution_time",
+                                    "monitor_run_status", "connection_id")
+            get_monitors.schedule_config.__fields__("interval_crontab", "interval_minutes",
+                                                    "schedule_type", "start_time", "timezone")
+            response = self.auth.client(query).get_monitors
+            if len(response) > 0:
+                raw_items.extend(response)
+                for monitor in response:
+                    monitors.append(monitor.uuid)
+
+            skip_records += self.BATCH
+            if len(response) < self.BATCH:
+                break
+
+        return monitors, raw_items
+
+    def get_mac_monitors(self, batch_size: Optional[int] = None, skip_records: Optional[int] = 0) -> tuple:
+
+        batch_size = self.BATCH if batch_size is None else batch_size
+
+        raw_items = []
+        monitors = []
+        while True:
+            query = Query()
+            get_monitors = query.get_monitors(limit=batch_size, offset=skip_records, is_template_managed=True)
+            get_monitors.__fields__("uuid", "monitor_type", "resource_id", "is_paused", "next_execution_time",
+                                    "monitor_run_status", "connection_id")
+            get_monitors.schedule_config.__fields__("interval_crontab", "interval_minutes",
+                                                    "schedule_type", "start_time", "timezone")
             response = self.auth.client(query).get_monitors
             if len(response) > 0:
                 raw_items.extend(response)

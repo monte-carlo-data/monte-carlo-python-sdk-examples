@@ -6,7 +6,6 @@ from monitors import *
 # Initialize logger
 util_name = __file__.split('/')[-1].split('.')[0]
 logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
-coloredlogs.install(level='INFO', fmt='%(asctime)s %(levelname)s - %(message)s')
 
 
 class BulkExportMonitors(Monitors):

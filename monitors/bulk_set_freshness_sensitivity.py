@@ -1,11 +1,3 @@
-# #INSTRUCTIONS:
-#
-# LOW, MEDIUM, HIGH)]
-# #2. Run this script, providing the mcdId, mcdToken, DWId, and CSV
-# #Limitation:
-# #This will make 1 request per table, so 10,000/day request limit via API is still a consideration
-#
-
 import os
 import sys
 import csv
@@ -17,7 +9,6 @@ from cron_validator import CronValidator
 # Initialize logger
 util_name = __file__.split('/')[-1].split('.')[0]
 logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
-coloredlogs.install(level='INFO', fmt='%(asctime)s %(levelname)s - %(message)s')
 
 
 class SetFreshnessSensitivity(Monitors, Tables):
@@ -45,6 +36,8 @@ class SetFreshnessSensitivity(Monitors, Tables):
 			Any: Dictionary with mappings or None.
 
 		"""
+		# TODO
+		# should fail if input file does not exist
 
 		file_path = Path(input_file)
 		LOGGER.info(f"starting input file validation...")
@@ -89,7 +82,7 @@ class SetFreshnessSensitivity(Monitors, Tables):
 			except ValueError as e:
 				LOGGER.error(f"errors found in file: {e}")
 
-			return input_tables
+		return input_tables
 
 	def update_freshness_thresholds(self, input_dict: dict, warehouse_id: str):
 
@@ -144,7 +137,7 @@ class SetFreshnessSensitivity(Monitors, Tables):
 				mutation = Mutation()
 				mutation.create_or_update_freshness_custom_rule(**payload)
 				try:
-					self.progress_bar.update(self.progress_bar.tasks[0].id, advance=50 / len(input_fulltableids))
+					self.progress_bar.update(self.progress_bar.tasks[0].id, advance=75 / len(input_fulltableids))
 					_ = self.auth.client(mutation).create_or_update_freshness_custom_rule
 					LOGGER.info(f"freshness threshold updated successfully for table {full_table_id}")
 				except Exception as e:
@@ -154,7 +147,6 @@ class SetFreshnessSensitivity(Monitors, Tables):
 
 
 def main(*args, **kwargs):
-
 	# Capture Command Line Arguments
 	formatter = lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=120)
 	parser = argparse.ArgumentParser(description="\n[ SET FRESHNESS SENSITIVITY ]\n\n\t• If updating to an explicit "
@@ -185,17 +177,20 @@ def main(*args, **kwargs):
 	dw_id = args.warehouse
 
 	# Initialize Util
-	try:
-		with (Progress() as progress):
-			task = progress.add_task("[yellow][RUNNING]...", total=100)
+	with (Progress() as progress):
+		try:
+			task = progress.add_task("[dark_orange3][RUNNING]...", total=100)
 			LogRotater.rotate_logs(retention_period=7)
 			progress.update(task, advance=25)
-
 			LOGGER.info(f"running utility using '{args.profile}' profile")
 			util = SetFreshnessSensitivity(profile, progress=progress)
 			util.update_freshness_thresholds(util.validate_input_file(input_file), dw_id)
-			progress.update(task, description="[dodger_blue2][COMPLETE]", advance=100)
+		except Exception as e:
+			LOGGER.error(e, exc_info=False)
+			print(traceback.format_exc())
+		finally:
+			progress.update(task, description="[dodger_blue2 bold][COMPLETE]", advance=100)
 
-	except Exception as e:
-		LOGGER.error(e, exc_info=False)
-		print(traceback.format_exc())
+
+if __name__ == '__main__':
+	main()

@@ -14,7 +14,7 @@ def main_module(cmd):
 def bind_function(name):
 
     def func(args):
-        call = importlib.import_module(f'{module}.{submodule.replace('-', '_')}')
+        call = importlib.import_module(f"{module}.{submodule.replace('-', '_')}")
         try:
             call.main(args)
         except AttributeError as e:

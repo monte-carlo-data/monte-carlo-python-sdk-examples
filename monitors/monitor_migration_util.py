@@ -6,7 +6,6 @@ from monitors import *
 # Initialize logger
 util_name = __file__.split('/')[-1].split('.')[0]
 logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
-coloredlogs.install(level='INFO', fmt='%(asctime)s %(levelname)s - %(message)s')
 
 
 class MonitorMigrationUtility(Monitors):
@@ -217,7 +216,7 @@ def main(*args, **kwargs):
     export_parser.add_argument('--asset', '-a', required=True,
                                help='Asset Name. This can be a project, dataset or table. If UI contains database include it i.e. <database>:<schema>', metavar=m)
     export_parser.add_argument('--namespace', '-n', required=False,
-                               help='Namespace for the exported monitors. Defaults to --schema if not set', metavar=m)
+                               help='Namespace for the exported monitors. Defaults to --asset if not set', metavar=m)
 
     migrate_parser = subparsers.add_parser('migrate', description="Creates monitors as MaC after export.",
                                            help="Creates monitors as MaC after export.")
@@ -283,7 +282,7 @@ def main(*args, **kwargs):
 
     except Exception as e:
         LOGGER.error(e, exc_info=False)
-        print(traceback.format_exc())
+        print(f"[red]{traceback.format_exc()}")
 
 
 if __name__ == '__main__':
