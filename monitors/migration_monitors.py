@@ -85,11 +85,20 @@ def export_monitors(monitors_file_path, namespace, warehouse_id):
 	print("Wrote the file")
 	return mc_monitors_path
 
-def modify_monitors_file_ids(monitor_path, source_tables):
+def modify_monitors_file_ids(monitor_path, source_tables, source_warehouse_uuid, destination_warehouse_uuid):
 	print("Modifying the monitors file")
 	monitors_file_yml = monitor_path + '/montecarlo/monitors.yml'
+
+	destination_warehouse_query = Query()
+	destination_warehouse_query.get_warehouse(uuid=destination_warehouse_uuid).__fields__('name')
+	destination_warehouse = client(destination_warehouse_query).get_warehouse
+
+	source_warehouse_query = Query()
+	source_warehouse_query.get_warehouse(uuid=source_warehouse_uuid).__fields__('name')
+	source_warehouse = client(source_warehouse_query).get_warehouse
 	with open(monitors_file_yml, 'r') as monitors_yml:
 		file_data = monitors_yml.read()
+		file_data = file_data.replace(source_warehouse.name, destination_warehouse.name)
 		for table in source_tables:
 			if "destination" in source_tables[table]:
 				file_data = file_data.replace(source_tables[table]['object_id'], source_tables[table]['destination']['object_id'])
@@ -119,8 +128,10 @@ if __name__ == '__main__':
 	tag_key = '{Add tag key here}'
 	source_tag_value = '{Add source tage here}'
 	destination_tag_value = '{Add destination tag here}'
-	# UUID for s1-Prod-Connection found via API
-	warehouse_uuid = '{Insert Warehouse ID}'
+	# UUID for source Warehouse found via API
+	source_warehouse_uuid = '{Source Warehouse UUID}'
+	#UUID for destination Warehouse found via API
+	destination_warehouse_uuid = '{Destination Warehouse UUID}'
 	#-------------------------------------------------------
 	print("Preparing to move monitors from '%s' to '%s'" %(source_tag_value, destination_tag_value))
 	# Environment setup
@@ -131,14 +142,16 @@ if __name__ == '__main__':
 	
     #Get monitors to move
 	source_tables = get_monitors(client=client, source_tag_value=source_tag_value, destination_tag_value=destination_tag_value, tag_key=tag_key)
-	# Write UUIDs to csv file
-	csv_file_name = write_csv_file(source_tables=source_tables)
-	# Validate CLI
-	# Export using the csv file from above
-	monitors_path = export_monitors(monitors_file_path=csv_file_name, namespace=namespace, warehouse_id=warehouse_uuid)
-	# Modify exported files contents to new paths
-	modify_monitors_file_ids(monitors_path, source_tables)
-	# Re import the file
-	move_monitors(namespace=namespace, monitors_workspace_dir=monitors_path)
+	if source_tables:
+		# Write UUIDs to csv file
+		csv_file_name = write_csv_file(source_tables=source_tables)
+		# Export using the csv file from above
+		monitors_path = export_monitors(monitors_file_path=csv_file_name, namespace=namespace, warehouse_id=destination_warehouse_uuid)
+		# Modify exported files contents to new paths
+		modify_monitors_file_ids(monitors_path, source_tables, source_warehouse_uuid=source_warehouse_uuid, destination_warehouse_uuid=destination_warehouse_uuid)
+		# Re import the file
+		move_monitors(namespace=namespace, monitors_workspace_dir=monitors_path)
+	else:
+		print("No monitors found to migrate")
 	#Clean up files on system
 	clean_up_files()
