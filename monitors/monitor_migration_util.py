@@ -4,7 +4,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from monitors import *
 
 # Initialize logger
-util_name = __file__.split('/')[-1].split('.')[0]
+util_name = os.path.basename(__file__).split('.')[0]
 logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
 
 
@@ -81,11 +81,11 @@ class MonitorMigrationUtility(Monitors):
         LOGGER.info(f"retrieving custom monitors for asset {asset_search}...")
         monitors = []
         for dw_id in warehouses:
-            monitors.extend(self.get_custom_rules_with_assets(dw_id, asset_search))
+            monitors.extend(self.get_custom_rules_with_assets(dw_id, asset_search)[0])
             self.progress_bar.update(self.progress_bar.tasks[0].id, advance=50/len(warehouses))
 
         dw_id = warehouse
-        monitors.extend(self.get_monitors_by_entities(dw_id, asset_search))
+        monitors.extend(self.get_monitors_by_entities(dw_id, asset_search)[0])
 
         # using set() to remove duplicated from list, if any
         monitors = list(set(monitors))
@@ -183,7 +183,7 @@ class MonitorMigrationUtility(Monitors):
                         LOGGER.debug(f"monitor [{monitor}] disabled successfully - toggleMonitorState")
                         count += 1
                     self.progress_bar.update(self.progress_bar.tasks[0].id, advance=50 / len(monitors))
-                    LOGGER.info(f"{action} completed. Applied to {count} monitors")
+                LOGGER.info(f"{action} completed. Applied to {count} monitors")
         else:
             LOGGER.error(
                 "unable to locate output file. Make sure the 'export' and 'migrate' commands were previously run")
@@ -201,7 +201,7 @@ def main(*args, **kwargs):
                                                  "monitors are working as expected, you may disable the original "
                                                  "monitors by running the utility in 'disable' mode.\n\t   • Alternatively"
                                                  ", you can delete the original monitors by running the utility in "
-                                                 "'disable' mode.".expandtabs(4), formatter_class=formatter)
+                                                 "'cleanup' mode.".expandtabs(4), formatter_class=formatter)
     subparsers = parser.add_subparsers(dest='commands', required=True, metavar=" ")
     parser._optionals.title = "Options"
     parser._positionals.title = "Commands"

@@ -246,7 +246,7 @@ class Monitors(Util):
         get_custom_rules = query.get_custom_rules(first=batch_size, warehouse_uuid=warehouse_id,
                                                   **(dict(after=after) if after else {}))
         get_custom_rules.edges.node.__fields__("uuid", "rule_type", "is_paused")
-        get_custom_rules.edges.node.queries(first=batch_size).edges.node.__fields__("uuid", "entities", "custom_sql")
+        get_custom_rules.edges.node.queries(first=batch_size).edges.node.__fields__("uuid", "entities", "sql_query")
         get_custom_rules.page_info.__fields__(end_cursor=True)
         get_custom_rules.page_info.__fields__("has_next_page")
 
@@ -270,13 +270,13 @@ class Monitors(Util):
             response = self.auth.client(
                 self.get_custom_rules(warehouse_id=dw_id, after=cursor)).get_custom_rules
             if len(response.edges) > 0:
-                raw_items.extend(response)
+                raw_items.extend(response.edges)
                 for edge in response.edges:
                     if not edge.node.is_paused:
                         if len(edge.node.queries.edges) > 0:
                             for node in edge.node.queries.edges:
                                 if node.node.entities:
-                                    if asset in [ent for ent in node.node.entities]:
+                                    if any(asset in item for item in [ent for ent in node.node.entities]):
                                         LOGGER.debug(
                                             f"monitor of type {edge.node.rule_type} found in {node.node.entities}"
                                             f" - {edge.node.uuid} - getCustomRules")
