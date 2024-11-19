@@ -179,7 +179,7 @@ class MonitorMigrationUtility(Monitors):
                                 continue
                     else:
                         _ = self.auth.client(self.toggle_monitor_state(),
-                                             variables={"monitorId": monitor, "pause": True}).pause_monitor
+                                             variables={"ruleId": monitor, "pause": True}).pause_rule
                         LOGGER.debug(f"monitor [{monitor}] disabled successfully - toggleMonitorState")
                         count += 1
                     self.progress_bar.update(self.progress_bar.tasks[0].id, advance=50 / len(monitors))
