@@ -460,14 +460,15 @@ class Monitors(Util):
         """Mutation not available in pycarlo. Return mutation to enable/disable monitor"""
 
         mutation = f"""
-            mutation toggleMonitorState($monitorId: UUID!, $pause: Boolean!) {{
-              pauseMonitor(pause: $pause, uuid: $monitorId) {{
-                monitor {{
-                  id
-                  uuid
-                  isPaused
-                }}
-              }}
-            }}"""
+        mutation toggleRuleState($ruleId: UUID!, $pause: Boolean!) {{
+          pauseRule(pause: $pause, uuid: $ruleId) {{
+            rule {{
+              id
+              uuid
+              isPaused
+            }}
+          }}
+        }}
+        """
 
         return mutation
