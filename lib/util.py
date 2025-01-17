@@ -158,6 +158,28 @@ class Tables(Util):
         get_tables.page_info.__fields__("has_next_page")
 
         return query
+    
+    def get_monitored_tables(self, batch_size: Optional[int] = None,
+                   after: Optional[str] = None) -> Query:
+        """Retrieve table information based on warehouse id and search parameter.
+
+            Returns:
+                Query: Tables that have monitoring enabled, but not query-based volume monitoring.
+
+        """
+
+        batch_size = self.BATCH if batch_size is None else batch_size
+
+        query = Query()
+        get_tables = query.get_tables(first=batch_size, is_deleted=False,
+                                      is_monitored=True,
+                                      **(dict(after=after) if after else {}))
+        get_tables.edges.node.__fields__("mcon")
+        get_tables.edges.node.table_capabilities.__fields__("has_non_metadata_size_collection")
+        get_tables.page_info.__fields__(end_cursor=True)
+        get_tables.page_info.__fields__("has_next_page")
+
+        return query
 
     def get_domain_tables(self, domain_name):
 
@@ -576,3 +598,10 @@ class Monitors(Util):
             except:
                 LOGGER.error(f"Unable to pause monitor - {monitor_uuid}")
                 return False
+    
+    def toggle_size_collection(self,mcon: str, enabled: True) -> Mutation:
+        mutation=Mutation()
+        mutation.toggle_size_collection(mcon=mcon,enabled=enabled).__fields__("enabled")
+        
+        return mutation
+
