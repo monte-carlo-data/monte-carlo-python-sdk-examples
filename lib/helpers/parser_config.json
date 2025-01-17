@@ -1,0 +1,85 @@
+{
+	"monitors": {
+		"monitor_migration_util.py": {
+			"description": "\n[ MONITOR MIGRATION UTIL ]\n\n\t1. Run the utility in 'export' mode to generate MaC configuration.\n\t2. Modify the 'monitors.yml' generated in step 1 to incorporate monitor changes.\n\t3. Run the utility in 'migrate' mode (monitors will not be commited).\n\t   • Set -f flag to create the monitors.\n\t4. Once confirmed migrated monitors are working as expected, you may disable the original monitors by running the utility in 'disable' mode.\n\t   • Alternatively, you can delete the original monitors by running the utility in 'cleanup' mode.",
+			"subparsers": {
+				"export":  {
+					"description": "Export monitors from MC UI that match asset search pattern.",
+					"help":  "Export monitors from MC UI that match asset search pattern.",
+					"arguments": {
+						"profile":  {
+							"default": "default",
+							"required": true,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"warehouse": {
+							"required": true,
+							"help": "Warehouse UUID"
+						},
+						"asset": {
+							"required": true,
+							"help": "Asset Name. This can be a project, dataset or table. If UI contains database include it i.e. <database>:<schema>."
+						},
+						"namespace": {
+							"required": false,
+							"help": "Namespace for the exported monitors. Defaults to --asset if not set."
+						}
+					}
+				},
+				"migrate":  {
+					"description": "Creates monitors as MaC after export.",
+					"help":  "Creates monitors as MaC after export.",
+					"arguments": {
+						"profile":  {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"namespace": {
+							"required": false,
+							"help": "Namespace for the migrated monitors."
+						},
+						"directory": {
+							"required": true,
+							"help": "Project directory where output files from 'export' action were generated."
+						},
+						"force": {
+							"required": false,
+							"help": "Run WITHOUT dry-run mode."
+						}
+					}
+				},
+				"cleanup":  {
+					"description": "Removes old monitors.",
+					"help":  "Removes old monitors.",
+					"arguments": {
+						"profile":  {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"directory": {
+							"required": true,
+							"help": "Project directory where output files from 'export' action were generated."
+						}
+					}
+				},
+				"disable":  {
+					"description": "Disables old monitors.",
+					"help":  "Disables old monitors.",
+					"arguments": {
+						"profile":  {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"directory": {
+							"required": true,
+							"help": "Project directory where output files from 'export' action were generated."
+						}
+					}
+				}
+			}
+		}
+	}
+}

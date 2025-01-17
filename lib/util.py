@@ -43,7 +43,7 @@ class Util(object):
         self.profile = profile
         self.OUTPUT_DIR = Path(os.path.abspath(__file__)).parent.parent / "output"
         self.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        self.BATCH = int(self.configs['global'].get('BATCH', 1000))
+        self.BATCH = int(self.configs['global'].get('BATCH', '1000'))
 
     def get_warehouses(self) -> list:
         """Returns a list of warehouse uuids"""
@@ -54,6 +54,28 @@ class Util(object):
         warehouses = [warehouse.uuid for warehouse in res.account.warehouses]
 
         return warehouses
+
+    def get_domains(self):
+
+        query = Query()
+        query.get_all_domains().__fields__("name", "uuid")
+
+        domains = self.auth.client(query).get_all_domains
+
+        return domains
+
+    def get_data_products(self, batch_size: Optional[int] = None):
+
+        batch_size = self.BATCH if batch_size is None else batch_size
+
+        query = Query()
+        get_data_products = query.get_data_products()
+        get_data_products.__fields__("description", "name", "uuid")
+        get_data_products.audiences.__fields__("uuid")
+        get_data_products.assets(first=batch_size).edges.node.__fields__("mcon")
+        get_data_products.assets.page_info.__fields__("has_next_page", end_cursor=True)
+
+        return query
 
 
 class Admin(Util):
@@ -106,13 +128,15 @@ class Tables(Util):
     def __init__(self, profile: str = None, config_file: str = None, progress: Progress = None):
         super().__init__(profile, config_file, progress)
 
-    def get_tables(self, dw_id: str, search: str = "", batch_size: Optional[int] = None,
-                   after: Optional[str] = None) -> Query:
+    def get_tables(self, dw_id: str = None, domain_id: str = None, search: str = "", is_monitored: bool = True,
+                   batch_size: Optional[int] = None, after: Optional[str] = None) -> Query:
         """Retrieve table information based on warehouse id and search parameter.
 
             Args:
                 dw_id(str): Warehouse UUID from MC.
+                domain_id(str): Domain UUID from MC.
                 search(str): Database/Schema combination to apply in search filter.
+                is_monitored(bool): Status of table.
                 batch_size(int): Limit of results returned by the response.
                 after(str): Cursor value for next batch.
 
@@ -121,13 +145,15 @@ class Tables(Util):
 
         """
 
+        not_none_params = {k: v for k, v in locals().items() if v is not None}
+        if not_none_params.get('self'):
+            del not_none_params['self']
         batch_size = self.BATCH if batch_size is None else batch_size
 
         query = Query()
-        get_tables = query.get_tables(first=batch_size, dw_id=dw_id, search=f"{search}", is_deleted=False,
-                                      is_monitored=True,
-                                      **(dict(after=after) if after else {}))
+        get_tables = query.get_tables(first=batch_size, **not_none_params, is_deleted=False)
         get_tables.edges.node.__fields__("full_table_id", "mcon", "table_type")
+        get_tables.edges.node.table_capabilities.__fields__("has_non_metadata_size_collection")
         get_tables.page_info.__fields__(end_cursor=True)
         get_tables.page_info.__fields__("has_next_page")
 
@@ -154,6 +180,29 @@ class Tables(Util):
         get_tables.page_info.__fields__("has_next_page")
 
         return query
+
+    def get_domain_tables(self, domain_name):
+
+        all_domains = self.get_domains()
+        domain_uuid = None
+        for domain in all_domains:
+            if domain.name == domain_name:
+                domain_uuid = domain.uuid
+                break
+
+        raw_items = []
+        mcons = []
+        cursor = None
+        while True:
+            response = self.auth.client(self.get_tables(domain_id=domain_uuid, after=cursor)).get_tables
+            for table in response.edges:
+                mcons.append(table.node.mcon)
+            if response.page_info.has_next_page:
+                cursor = response.page_info.end_cursor
+            else:
+                break
+
+        return mcons, raw_items
 
     def get_mcons(self, dw_id: str, search: str = "") -> tuple:
         """Get tables' mcon values
@@ -275,6 +324,9 @@ class Monitors(Util):
                     if not edge.node.is_paused:
                         if len(edge.node.queries.edges) > 0:
                             for node in edge.node.queries.edges:
+                                LOGGER.debug(
+                                    f"monitor of type {edge.node.rule_type} found in {node.node.entities}"
+                                    f" - {edge.node.uuid} - getCustomRules")
                                 if node.node.entities:
                                     if any(asset in item for item in [ent for ent in node.node.entities]):
                                         LOGGER.debug(
@@ -316,6 +368,9 @@ class Monitors(Util):
             if len(response) > 0:
                 raw_items.extend(response)
                 for monitor in response:
+                    LOGGER.debug(
+                        f"monitor of type {monitor.monitor_type} found in {monitor.entities} - "
+                        f"{monitor.uuid} - getMonitors")
                     if monitor.monitor_status != "PAUSED" and monitor.namespace == 'ui':
                         if monitor.resource_id == dw_id:
                             monitors.append(monitor.uuid)
@@ -467,35 +522,86 @@ class Monitors(Util):
 
         return yaml_template
 
-    def delete_monitor(self,monitor_uuid: str) -> Mutation:
+    @staticmethod
+    def delete_monitor(monitor_uuid: str) -> Mutation:
         mutation = Mutation()
         mutation.delete_monitor(monitor_id=monitor_uuid).__fields__('success')
         return mutation
 
-    def delete_custom_rule(self,rule_uuid: str) -> Mutation:
+    @staticmethod
+    def delete_custom_rule(rule_uuid: str) -> Mutation:
         mutation = Mutation()
         mutation.delete_custom_rule(uuid=rule_uuid).__fields__('uuid')
         return mutation
 
+    def delete_custom_monitor(self, monitor_uuid):
+
+        try:
+            _ = self.auth.client(self.delete_monitor(monitor_uuid)).delete_monitor
+            LOGGER.debug(f"monitor [{monitor_uuid}] deleted successfully - deleteMonitor")
+        except:
+            try:
+                _ = self.auth.client(self.delete_custom_rule(monitor_uuid)).delete_custom_rule
+                LOGGER.debug(f"monitor [{monitor_uuid}] deleted successfully - deleteCustomRule")
+            except:
+                LOGGER.error(f"Unable to delete monitor [{monitor_uuid}]")
+
     @staticmethod
     def toggle_monitor_state():
-        """Mutation not available in pycarlo. Return mutation to enable/disable monitor"""
+        """Return mutation to enable/disable monitor (metric)"""
 
         mutation = f"""
-        mutation toggleRuleState($ruleId: UUID!, $pause: Boolean!) {{
-          pauseRule(pause: $pause, uuid: $ruleId) {{
-            rule {{
-              id
-              uuid
-              isPaused
-            }}
-          }}
-        }}
-        """
+                mutation toggleMonitorState($ruleId: UUID!, $pause: Boolean!) {{
+                  pauseMonitor(pause: $pause, uuid: $ruleId) {{
+                    monitor {{
+                      id
+                      uuid
+                      isPaused
+                    }}
+                  }}
+                }}
+                """
 
         return mutation
+
+    @staticmethod
+    def toggle_rule_state():
+        """Return mutation to enable/disable rule (sql rules)"""
+
+        mutation = f"""
+                mutation toggleRuleState($ruleId: UUID!, $pause: Boolean!) {{
+                  pauseRule(pause: $pause, uuid: $ruleId) {{
+                    rule {{
+                      id
+                      uuid
+                      isPaused
+                    }}
+                  }}
+                }}
+                """
+
+        return mutation
+
+    def pause_monitor(self, monitor_uuid: str, pause: bool) -> bool:
+
+        try:
+            _ = self.auth.client(self.toggle_monitor_state(),
+                                 variables={"ruleId": monitor_uuid, "pause": pause}).pauseMonitor
+            LOGGER.debug(f"monitor [{monitor_uuid}] toggled successfully - pauseMonitor")
+            return True
+        except:
+            try:
+                _ = self.auth.client(self.toggle_rule_state(),
+                                     variables={"ruleId": monitor_uuid, "pause": pause}).pauseRule
+                LOGGER.debug(f"monitor [{monitor_uuid}] toggled successfully - pauseRule")
+                return True
+            except:
+                LOGGER.error(f"Unable to pause monitor - {monitor_uuid}")
+                return False
     
     def toggle_size_collection(self,mcon: str, enabled: True) -> Mutation:
         mutation=Mutation()
         mutation.toggle_size_collection(mcon=mcon,enabled=enabled).__fields__("enabled")
+        
         return mutation
+

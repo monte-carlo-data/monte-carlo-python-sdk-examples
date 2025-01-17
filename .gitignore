@@ -1,5 +1,7 @@
 *.xlsx
 *.csv
+*.json
+!lib/helpers/parser_config.json
 *.log
 *.bkp
 *.yml

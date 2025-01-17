@@ -29,7 +29,7 @@ class OverlappedMonitorSchedules(Monitors):
         super().__init__(profile,  config_file, progress)
         self.progress_bar = progress
 
-    def group_monitors_by_run_time(self, erroring_only: bool):
+    def group_monitors_by_run_time(self, day_range: int, erroring_only: bool):
         LOGGER.info("extracting monitor execution information...")
         groups = defaultdict(lambda: defaultdict(dict))
         _, monitors_raw = self.get_ui_monitors()
@@ -52,7 +52,7 @@ class OverlappedMonitorSchedules(Monitors):
                     # Calculate the next run time in UTC
                     run_time = next_run
                     frequency = 1
-                    while datetime.now(pytz.UTC) < run_time < datetime.now(pytz.UTC) + timedelta(days=7):
+                    while datetime.now(pytz.UTC) < run_time < datetime.now(pytz.UTC) + timedelta(days=day_range):
                         run_time += timedelta(minutes=interval_minutes)
                         normalized_run_time = run_time.replace(second=0, microsecond=0) # set minute=0 if only grouping by date & hour
                         resource_id = monitor.resource_id
@@ -140,6 +140,8 @@ def main(*args, **kwargs):
                         help='Specify an MCD profile name. Uses default otherwise', metavar=m)
     parser.add_argument('--min', '-m', required=True, type=int,
                         help='Minimum monitor execution count threshold', metavar=m)
+    parser.add_argument('--range', '-r', required=False, type=int, default=7,
+                        help='Execution range. Defaults to 7 days.', metavar=m)
     parser.add_argument('--error', '-e', required=False, type=bool, default=False,
                         help='Considers only monitors in ERROR state', metavar=m)
 
@@ -152,6 +154,7 @@ def main(*args, **kwargs):
     # Initialize variables
     profile = args.profile
     monitor_count_min = args.min
+    range = args.range
     error_monitors = args.error
 
     # Initialize Util and run actions
@@ -162,7 +165,7 @@ def main(*args, **kwargs):
             progress.update(task, advance=10)
             LOGGER.info(f"running utility using '{args.profile}' profile")
             util = OverlappedMonitorSchedules(profile, progress=progress)
-            util.plot_monitor_data(util.group_monitors_by_run_time(error_monitors), monitor_count_min)
+            util.plot_monitor_data(util.group_monitors_by_run_time(range, error_monitors), monitor_count_min)
         except Exception as e:
             LOGGER.error(e, exc_info=False)
             print(traceback.format_exc())
