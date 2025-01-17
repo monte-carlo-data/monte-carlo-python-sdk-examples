@@ -10,7 +10,7 @@ util_name = os.path.basename(__file__).split('.')[0]
 logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
 
 
-class MonitorMigrationUtility(Monitors):
+class MonitorMigrationUtility(Monitors, Tables):
 
     def __init__(self, profile, config_file: str = None, progress: Progress = None):
         """Creates an instance of MonitorMigrationUtility.

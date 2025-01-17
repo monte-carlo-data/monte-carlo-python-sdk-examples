@@ -43,7 +43,7 @@ class Util(object):
         self.profile = profile
         self.OUTPUT_DIR = Path(os.path.abspath(__file__)).parent.parent / "output"
         self.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        self.BATCH = int(self.configs['global'].get('BATCH', 1000))
+        self.BATCH = int(self.configs['global'].get('BATCH', '1000'))
 
     def get_warehouses(self) -> list:
         """Returns a list of warehouse uuids"""
@@ -128,13 +128,15 @@ class Tables(Util):
     def __init__(self, profile: str = None, config_file: str = None, progress: Progress = None):
         super().__init__(profile, config_file, progress)
 
-    def get_tables(self, dw_id: str, search: str = "", batch_size: Optional[int] = None,
-                   after: Optional[str] = None) -> Query:
+    def get_tables(self, dw_id: str = None, domain_id: str = None, search: str = "", is_monitored: bool = True,
+                   batch_size: Optional[int] = None, after: Optional[str] = None) -> Query:
         """Retrieve table information based on warehouse id and search parameter.
 
             Args:
                 dw_id(str): Warehouse UUID from MC.
+                domain_id(str): Domain UUID from MC.
                 search(str): Database/Schema combination to apply in search filter.
+                is_monitored(bool): Status of table.
                 batch_size(int): Limit of results returned by the response.
                 after(str): Cursor value for next batch.
 
@@ -143,13 +145,15 @@ class Tables(Util):
 
         """
 
+        not_none_params = {k: v for k, v in locals().items() if v is not None}
+        if not_none_params.get('self'):
+            del not_none_params['self']
         batch_size = self.BATCH if batch_size is None else batch_size
 
         query = Query()
-        get_tables = query.get_tables(first=batch_size, dw_id=dw_id, search=f"{search}", is_deleted=False,
-                                      is_monitored=True,
-                                      **(dict(after=after) if after else {}))
+        get_tables = query.get_tables(first=batch_size, **not_none_params, is_deleted=False)
         get_tables.edges.node.__fields__("full_table_id", "mcon", "table_type")
+        get_tables.edges.node.table_capabilities.__fields__("has_non_metadata_size_collection")
         get_tables.page_info.__fields__(end_cursor=True)
         get_tables.page_info.__fields__("has_next_page")
 

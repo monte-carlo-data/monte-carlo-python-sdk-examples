@@ -52,20 +52,25 @@ def generate_arg_parser(type, executable):
     parser._positionals.title = "Commands"
     m = ''
 
-    if config.get(type).get(executable).get('subparsers'):
-        d = {}
-        for subparser in config[type][executable]['subparsers']:
-            d[f"{subparser}_parser"] = subparsers.add_parser(subparser,
-                                        description=config[type][executable]['subparsers'][subparser]['description'],
-                                        help=config[type][executable]['subparsers'][subparser]['help'])
-            for argument in config[type][executable]['subparsers'][subparser]['arguments']:
-                d[f"{subparser}_parser"].add_argument(f"--{argument}", f"-{argument[0]}",
-                                                      required=config[type][executable]['subparsers'][subparser]['arguments'][argument]['required'],
-                                                      default=config[type][executable]['subparsers'][subparser]['arguments'][argument].get('default', None),
-                                                      help=config[type][executable]['subparsers'][subparser]['arguments'][argument]['help'],
-                                                      metavar=m)
+    try:
+        if config.get(type).get(executable).get('subparsers'):
+            d = {}
+            for subparser in config[type][executable]['subparsers']:
+                d[f"{subparser}_parser"] = subparsers.add_parser(subparser,
+                                            description=config[type][executable]['subparsers'][subparser]['description'],
+                                            help=config[type][executable]['subparsers'][subparser]['help'])
+                for argument in config[type][executable]['subparsers'][subparser]['arguments']:
+                    d[f"{subparser}_parser"].add_argument(f"--{argument}", f"-{argument[0]}",
+                                                          required=config[type][executable]['subparsers'][subparser]['arguments'][argument]['required'],
+                                                          default=config[type][executable]['subparsers'][subparser]['arguments'][argument].get('default', None),
+                                                          help=config[type][executable]['subparsers'][subparser]['arguments'][argument]['help'],
+                                                          metavar=m)
 
-    return parser, subparsers
+        return parser, subparsers
+
+    except KeyError as key:
+        LOGGER.error(f"Key {key} missing in {PARSER_CONFIG}")
+        sys.exit(1)
 
 
 def dump_help(parser, func, *args):
