@@ -1,11 +1,15 @@
 import sys
-import time
 
 import pytz
+import argparse
+import os
+import json
 from datetime import datetime, timedelta
 from lib.helpers.logs import LOGGER
 from rich.progress import Progress
 from cronsim import CronSim
+
+PARSER_CONFIG = f'{os.path.dirname(os.path.abspath(__file__))}/parser_config.json'
 
 
 def hour_rounder(t):
@@ -33,6 +37,35 @@ def link(uri, label=None):
     escape_mask = '\033]8;{};{}\033\\{}\033]8;;\033\\'
 
     return escape_mask.format(parameters, uri, label)
+
+
+def generate_arg_parser(type, executable):
+    """Fill in util description parser from JSON file"""
+
+    with open(PARSER_CONFIG, 'r') as file:
+        config = json.load(file)
+
+    formatter = lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=120)
+    parser = argparse.ArgumentParser(description=config[type][executable]['description'].expandtabs(4), formatter_class=formatter)
+    subparsers = parser.add_subparsers(dest='commands', required=True, metavar=" ")
+    parser._optionals.title = "Options"
+    parser._positionals.title = "Commands"
+    m = ''
+
+    if config.get(type).get(executable).get('subparsers'):
+        d = {}
+        for subparser in config[type][executable]['subparsers']:
+            d[f"{subparser}_parser"] = subparsers.add_parser(subparser,
+                                        description=config[type][executable]['subparsers'][subparser]['description'],
+                                        help=config[type][executable]['subparsers'][subparser]['help'])
+            for argument in config[type][executable]['subparsers'][subparser]['arguments']:
+                d[f"{subparser}_parser"].add_argument(f"--{argument}", f"-{argument[0]}",
+                                                      required=config[type][executable]['subparsers'][subparser]['arguments'][argument]['required'],
+                                                      default=config[type][executable]['subparsers'][subparser]['arguments'][argument].get('default', None),
+                                                      help=config[type][executable]['subparsers'][subparser]['arguments'][argument]['help'],
+                                                      metavar=m)
+
+    return parser, subparsers
 
 
 def dump_help(parser, func, *args):

@@ -1,7 +1,9 @@
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+import pathlib
 from monitors import *
+from lib.helpers import sdk_helpers
 
 # Initialize logger
 util_name = os.path.basename(__file__).split('.')[0]
@@ -83,12 +85,14 @@ class MonitorMigrationUtility(Monitors):
         for dw_id in warehouses:
             monitors.extend(self.get_custom_rules_with_assets(dw_id, asset_search)[0])
             self.progress_bar.update(self.progress_bar.tasks[0].id, advance=50/len(warehouses))
-
+        LOGGER.debug(f"Monitor count = {len(monitors)}")
         dw_id = warehouse
         monitors.extend(self.get_monitors_by_entities(dw_id, asset_search)[0])
+        LOGGER.debug(f"Monitor count = {len(monitors)}")
 
         # using set() to remove duplicated from list, if any
         monitors = list(set(monitors))
+        LOGGER.debug(f"Monitor count = {len(monitors)}")
         if len(monitors) > 0:
             LOGGER.info(f"{len(monitors)} custom monitors found")
             # Write monitor ids to CSV
@@ -161,27 +165,12 @@ class MonitorMigrationUtility(Monitors):
 
                 for monitor in monitors:
                     if action == 'cleanup':
-                        mutation = Mutation()
-                        mutation.delete_monitor(monitor_id=monitor)
-                        try:
-                            _ = self.auth.client(mutation).delete_monitor
-                            LOGGER.debug(f"monitor [{monitor}] deleted successfully - deleteMonitor")
+                        if self.delete_custom_monitor(monitor):
                             count += 1
-                        except:
-                            mutation = Mutation()
-                            mutation.delete_custom_rule(uuid=monitor)
-                            try:
-                                _ = self.auth.client(mutation).delete_custom_rule
-                                LOGGER.debug(f"monitor [{monitor}] deleted successfully - deleteCustomRule")
-                                count += 1
-                            except:
-                                LOGGER.debug(f"unable to delete monitor [{monitor}]")
-                                continue
                     else:
-                        _ = self.auth.client(self.toggle_monitor_state(),
-                                             variables={"ruleId": monitor, "pause": True}).pause_rule
-                        LOGGER.debug(f"monitor [{monitor}] disabled successfully - toggleMonitorState")
-                        count += 1
+                        if self.pause_monitor(monitor, True):
+                            count += 1
+
                     self.progress_bar.update(self.progress_bar.tasks[0].id, advance=50 / len(monitors))
                 LOGGER.info(f"{action} completed. Applied to {count} monitors")
         else:
@@ -192,54 +181,8 @@ class MonitorMigrationUtility(Monitors):
 def main(*args, **kwargs):
 
     # Capture Command Line Arguments
-    formatter = lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=120)
-    parser = argparse.ArgumentParser(description="\n[ MONITOR MIGRATION UTIL ]\n\n\t1. Run the utility in 'export'"
-                                                 " mode to generate MaC configuration.\n\t2. Modify the 'monitors.yml'"
-                                                 "generated in step 1 to incorporate monitor changes.\n\t3. Run the "
-                                                 "utility in 'migrate' mode (monitors will not be commited).\n\t   • Set"
-                                                 " -f flag to create the monitors.\n\t4. Once confirmed migrated "
-                                                 "monitors are working as expected, you may disable the original "
-                                                 "monitors by running the utility in 'disable' mode.\n\t   • Alternatively"
-                                                 ", you can delete the original monitors by running the utility in "
-                                                 "'cleanup' mode.".expandtabs(4), formatter_class=formatter)
-    subparsers = parser.add_subparsers(dest='commands', required=True, metavar=" ")
-    parser._optionals.title = "Options"
-    parser._positionals.title = "Commands"
-    m = ''
-
-    export_parser = subparsers.add_parser('export', description='Export monitors from MC UI that match asset search pattern.',
-                                          help='Export monitors from MC UI that match asset search pattern.')
-    export_parser.add_argument('--profile', '-p', required=False, default="default",
-                               help='Specify an MCD profile name. Uses default otherwise', metavar=m)
-    export_parser.add_argument('--warehouse', '-w', required=True,
-                               help='Warehouse ID', metavar=m)
-    export_parser.add_argument('--asset', '-a', required=True,
-                               help='Asset Name. This can be a project, dataset or table. If UI contains database include it i.e. <database>:<schema>', metavar=m)
-    export_parser.add_argument('--namespace', '-n', required=False,
-                               help='Namespace for the exported monitors. Defaults to --asset if not set', metavar=m)
-
-    migrate_parser = subparsers.add_parser('migrate', description="Creates monitors as MaC after export.",
-                                           help="Creates monitors as MaC after export.")
-    migrate_parser.add_argument('--profile', '-p', required=False, default="default",
-                                help='Specify an MCD profile name. Uses default otherwise', metavar=m)
-    migrate_parser.add_argument('--namespace', '-n', required=False,
-                                help='Namespace for the migrated monitors.', metavar=m)
-    migrate_parser.add_argument('--directory', '-d', required=True,
-                                help="Project directory where output files from 'export' action were generated.", metavar=m)
-    migrate_parser.add_argument('--force', '-f', required=False, action='store_true',
-                                help='Run WITHOUT dry-run mode')
-
-    cleanup_parser = subparsers.add_parser('cleanup', help="Removes old monitors.")
-    cleanup_parser.add_argument('--profile', '-p', required=False, default="default",
-                                help='Specify an MCD profile name. Uses default otherwise', metavar=m)
-    cleanup_parser.add_argument('--directory', '-d', required=True,
-                                help="Project directory where output files from 'export' action were generated.", metavar=m)
-
-    disable_parser = subparsers.add_parser('disable', help="Disables old monitors.")
-    disable_parser.add_argument('--profile', '-p', required=False, default="default",
-                                help='Specify an MCD profile name. Uses default otherwise', metavar=m)
-    disable_parser.add_argument('--directory', '-d', required=True,
-                                help="Project directory where output files from 'export' action were generated.", metavar=m)
+    parser, subparsers = sdk_helpers.generate_arg_parser(os.path.basename(os.path.dirname(os.path.abspath(__file__)))
+                                                         , os.path.basename(__file__))
 
     if not args:
         args = parser.parse_args(*args, **kwargs)

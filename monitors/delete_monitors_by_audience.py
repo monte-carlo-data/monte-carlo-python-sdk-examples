@@ -1,19 +1,12 @@
-#INSTRUCTIONS:
-#1. Pass your api keys when running script
-#2. Replace empty quotes on line 14 with the Audiences associated with the monitors you want deleted
-#3. Run the script
-
 import os
 import sys
-import csv
-import datetime
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from monitors import *
-from cron_validator import CronValidator
 
 # Initialize logger
 util_name = __file__.split('/')[-1].split('.')[0]
 logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
+
 
 class DeleteMonitorsByAudience(Monitors):
 	def __init__(self, profile,config_file: str = None, progress: Progress = None):
@@ -29,14 +22,14 @@ class DeleteMonitorsByAudience(Monitors):
 		self.progress_bar = progress
 		self.rule_operator_type = None
 
-
 	def delete_custom_monitors(self,audiences):
 		_,monitors = self.get_monitors_by_audience(audiences)
 		if len(monitors) == 0:
 			LOGGER.error("No monitors exist for given audience(s)")
 			sys.exit(1)
 		LOGGER.info(monitors)
-		rules = [const.MonitorTypes.VOLUME,const.MonitorTypes.CUSTOM_SQL,const.MonitorTypes.FRESHNESS,const.MonitorTypes.FIELD_QUALITY,const.MonitorTypes.COMPARISON,const.MonitorTypes.VALIDATION]
+		rules = [const.MonitorTypes.VOLUME,const.MonitorTypes.CUSTOM_SQL,const.MonitorTypes.FRESHNESS,
+		         const.MonitorTypes.FIELD_QUALITY, const.MonitorTypes.COMPARISON,const.MonitorTypes.VALIDATION]
 		for monitor in monitors:
 			self.progress_bar.update(self.progress_bar.tasks[0].id, advance=100 / len(monitors))
 			error = False
@@ -52,6 +45,7 @@ class DeleteMonitorsByAudience(Monitors):
 				LOGGER.info(f"Deletion Not Successful for: {monitor.uuid}")
 			else:
 				LOGGER.info(f"Deletion Successful for: {monitor.uuid}")
+
 
 def main(*args, **kwargs):
 
@@ -93,6 +87,7 @@ def main(*args, **kwargs):
 	except Exception as e:
 		LOGGER.error(e,exc_info=False)
 		print(traceback.format_exc())
+
 
 if __name__ == '__main__':
 	main()
