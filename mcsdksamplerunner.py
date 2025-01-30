@@ -28,6 +28,7 @@ if __name__ == '__main__':
 
     # Define folders to track
     modules = {'admin': {'description': 'Admin related operations and utilities.'},
+               'tables': {'description': 'Collection of actions and utilities around tables/views'},
                'monitors': {'description': 'Collection of actions and utilities for MC monitors.'},
                'lineage': {'description': 'Collection of actions and utilities around lineage'},}
 

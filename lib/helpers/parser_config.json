@@ -81,5 +81,25 @@
 				}
 			}
 		}
+	},
+	"tables": {
+		"link_tables_via_descriptions.py": {
+			"description": "\n[ LINK TABLE(S)/VIEW(S) UTIL ]\n\nAdds hyperlink in assets' description to link tables that match based on name",
+			"arguments": {
+				"profile": {
+					"default": "default",
+					"required": false,
+					"help": "Specify an MCD profile name. Uses default otherwise."
+				},
+				"a_source": {
+					"required": true,
+					"help": "Database & Schema in the format db:schema"
+				},
+				"b_source": {
+					"required": true,
+					"help": "Database & Schema in the format db:schema"
+				}
+			}
+		}
 	}
 }

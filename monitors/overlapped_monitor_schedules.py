@@ -128,10 +128,9 @@ def main(*args, **kwargs):
 
     # Capture Command Line Arguments
     formatter = lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=120)
-    parser = argparse.ArgumentParser(description="\n[ BULK EXPORT UI MONITORS ]\n\n\t• YML file will be written, which can then"
-                                                 " be used when syncing Monitors-as-Code. \n\t• Monitor 'name' is now a "
-                                                 "mandatory parameter to apply MaC. Set -e flag to 'y'\n\t  to get monitor names "
-                                                 "included in the yaml export.".expandtabs(4), formatter_class=formatter)
+    parser = argparse.ArgumentParser(description="\n[ OVERLAPPED MONITOR SCHEDULES ]\n\nDisplays monitor schedules that"
+                                                 " run concurrently with others and may have an impact in "
+                                                 "timeouts/performance.".expandtabs(4), formatter_class=formatter)
     parser._optionals.title = "Options"
     parser._positionals.title = "Commands"
     m = ''
