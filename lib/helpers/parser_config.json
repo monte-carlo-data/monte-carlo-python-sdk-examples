@@ -1,7 +1,308 @@
 {
+	"admin": {
+		"bulk_table_view_tag_importer.py": {
+			"description": "\n\nAdds tag to set of tables or views",
+			"arguments": {
+				"profile": {
+					"default": "default",
+					"required": false,
+					"help": "Specify an MCD profile name. Uses default otherwise."
+				},
+				"input_file": {
+					"required": true,
+					"help": "Path to CSV file containing asset names"
+				},
+				"warehouse": {
+					"required": true,
+					"help": "Warehouse name as it appears in MC"
+				},
+				"asset_type": {
+					"required": true,
+					"help": "view or table",
+					"choices": ["table", "view"]
+				},
+				"tag": {
+					"required": true,
+					"help": "Tag in key:value format"
+				}
+			}
+		}
+	},
 	"monitors": {
+		"enable_row_count_monitoring.py": {
+			"description": "\n\nAdds tag to set of tables or views",
+			"arguments": {
+				"profile": {
+					"default": "default",
+					"required": false,
+					"help": "Specify an MCD profile name. Uses default otherwise."
+				},
+				"input_file": {
+					"required": true,
+					"help": "Path to CSV file containing asset names"
+				},
+				"warehouse": {
+					"required": true,
+					"help": "Warehouse name as it appears in MC"
+				},
+				"asset_type": {
+					"required": true,
+					"help": "view or table",
+					"choices": ["table", "view"]
+				},
+				"tag": {
+					"required": true,
+					"help": "Tag in key:value format"
+				}
+			}
+		},
+
 		"monitor_migration_util.py": {
-			"description": "\n[ MONITOR MIGRATION UTIL ]\n\n\t1. Run the utility in 'export' mode to generate MaC configuration.\n\t2. Modify the 'monitors.yml' generated in step 1 to incorporate monitor changes.\n\t3. Run the utility in 'migrate' mode (monitors will not be commited).\n\t   • Set -f flag to create the monitors.\n\t4. Once confirmed migrated monitors are working as expected, you may disable the original monitors by running the utility in 'disable' mode.\n\t   • Alternatively, you can delete the original monitors by running the utility in 'cleanup' mode.",
+			"description": "\nExport monitors from UI to MaC. Allows to do some cool stuff. This text needs to be updated\n\n\t1. Run the utility in 'export' mode to generate MaC configuration.\n\t2. Modify the 'monitors.yml' generated in step 1 to incorporate monitor changes.\n\t3. Run the utility in 'migrate' mode (monitors will not be commited).\n\t   • Set -f flag to create the monitors.\n\t4. Once confirmed migrated monitors are working as expected, you may disable the original monitors by running the utility in 'disable' mode.\n\t   • Alternatively, you can delete the original monitors by running the utility in 'cleanup' mode.",
+			"subparsers": {
+				"export":  {
+					"description": "Export monitors from MC UI that match asset search pattern.",
+					"help":  "Export monitors from MC UI that match asset search pattern.",
+					"arguments": {
+						"profile":  {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"warehouse": {
+							"required": true,
+							"help": "Warehouse UUID"
+						},
+						"asset": {
+							"required": true,
+							"help": "Asset Name. This can be a project, dataset or table. If UI contains database include it i.e. <database>:<schema>."
+						},
+						"namespace": {
+							"required": false,
+							"help": "Namespace for the exported monitors. Defaults to --asset if not set."
+						}
+					}
+				},
+				"migrate":  {
+					"description": "Creates monitors as MaC after export.",
+					"help":  "Creates monitors as MaC after export.",
+					"arguments": {
+						"profile":  {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"namespace": {
+							"required": false,
+							"help": "Namespace for the migrated monitors."
+						},
+						"directory": {
+							"required": true,
+							"help": "Project directory where output files from 'export' action were generated."
+						},
+						"force": {
+							"required": false,
+							"help": "Run WITHOUT dry-run mode.",
+							"choices": ["yes", "no"]
+						}
+					}
+				},
+				"cleanup":  {
+					"description": "Removes old monitors.",
+					"help":  "Removes old monitors.",
+					"arguments": {
+						"profile":  {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"directory": {
+							"required": true,
+							"help": "Project directory where output files from 'export' action were generated."
+						}
+					}
+				},
+				"disable":  {
+					"description": "Disables old monitors.",
+					"help":  "Disables old monitors.",
+					"arguments": {
+						"profile":  {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"directory": {
+							"required": true,
+							"help": "Project directory where output files from 'export' action were generated."
+						}
+					}
+				}
+			}
+		},
+		"test.py": {
+			"description": "\n\t1. Run the utility in 'export' mode to generate MaC configuration.\n\t2. Modify the 'monitors.yml' generated in step 1 to incorporate monitor changes.\n\t3. Run the utility in 'migrate' mode (monitors will not be commited).\n\t   • Set -f flag to create the monitors.\n\t4. Once confirmed migrated monitors are working as expected, you may disable the original monitors by running the utility in 'disable' mode.\n\t   • Alternatively, you can delete the original monitors by running the utility in 'cleanup' mode.",
+			"subparsers": {
+				"export":  {
+					"description": "Export monitors from MC UI that match asset search pattern.",
+					"help":  "Export monitors from MC UI that match asset search pattern.",
+					"arguments": {
+						"profile":  {
+							"default": "default",
+							"required": true,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"warehouse": {
+							"required": true,
+							"help": "Warehouse UUID"
+						},
+						"asset": {
+							"required": true,
+							"help": "Asset Name. This can be a project, dataset or table. If UI contains database include it i.e. <database>:<schema>."
+						},
+						"namespace": {
+							"required": false,
+							"help": "Namespace for the exported monitors. Defaults to --asset if not set."
+						}
+					}
+				},
+				"migrate":  {
+					"description": "Creates monitors as MaC after export.",
+					"help":  "Creates monitors as MaC after export.",
+					"arguments": {
+						"profile":  {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"namespace": {
+							"required": false,
+							"help": "Namespace for the migrated monitors."
+						},
+						"directory": {
+							"required": true,
+							"help": "Project directory where output files from 'export' action were generated."
+						},
+						"force": {
+							"required": false,
+							"help": "Run WITHOUT dry-run mode."
+						}
+					}
+				},
+				"cleanup":  {
+					"description": "Removes old monitors.",
+					"help":  "Removes old monitors.",
+					"arguments": {
+						"profile":  {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"directory": {
+							"required": true,
+							"help": "Project directory where output files from 'export' action were generated."
+						}
+					}
+				},
+				"disable":  {
+					"description": "Disables old monitors.",
+					"help":  "Disables old monitors.",
+					"arguments": {
+						"profile":  {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"directory": {
+							"required": true,
+							"help": "Project directory where output files from 'export' action were generated."
+						}
+					}
+				}
+			}
+		},
+		"bulk_export_monitors.py": {
+			"description": "\n\t1. Run the utility in 'export' mode to generate MaC configuration.\n\t2. Modify the 'monitors.yml' generated in step 1 to incorporate monitor changes.\n\t3. Run the utility in 'migrate' mode (monitors will not be commited).\n\t   • Set -f flag to create the monitors.\n\t4. Once confirmed migrated monitors are working as expected, you may disable the original monitors by running the utility in 'disable' mode.\n\t   • Alternatively, you can delete the original monitors by running the utility in 'cleanup' mode.",
+			"subparsers": {
+				"export":  {
+					"description": "Export monitors from MC UI that match asset search pattern.",
+					"help":  "Export monitors from MC UI that match asset search pattern.",
+					"arguments": {
+						"profile":  {
+							"default": "default",
+							"required": true,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"warehouse": {
+							"required": true,
+							"help": "Warehouse UUID"
+						},
+						"asset": {
+							"required": true,
+							"help": "Asset Name. This can be a project, dataset or table. If UI contains database include it i.e. <database>:<schema>."
+						},
+						"namespace": {
+							"required": false,
+							"help": "Namespace for the exported monitors. Defaults to --asset if not set."
+						}
+					}
+				},
+				"migrate":  {
+					"description": "Creates monitors as MaC after export.",
+					"help":  "Creates monitors as MaC after export.",
+					"arguments": {
+						"profile":  {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"namespace": {
+							"required": false,
+							"help": "Namespace for the migrated monitors."
+						},
+						"directory": {
+							"required": true,
+							"help": "Project directory where output files from 'export' action were generated."
+						},
+						"force": {
+							"required": false,
+							"help": "Run WITHOUT dry-run mode."
+						}
+					}
+				},
+				"cleanup":  {
+					"description": "Removes old monitors.",
+					"help":  "Removes old monitors.",
+					"arguments": {
+						"profile":  {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"directory": {
+							"required": true,
+							"help": "Project directory where output files from 'export' action were generated."
+						}
+					}
+				},
+				"disable":  {
+					"description": "Disables old monitors.",
+					"help":  "Disables old monitors.",
+					"arguments": {
+						"profile":  {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"directory": {
+							"required": true,
+							"help": "Project directory where output files from 'export' action were generated."
+						}
+					}
+				}
+			}
+		},
+		"deduplicate_metric_monitors.py": {
+			"description": "\n\t1. Run the utility in 'export' mode to generate MaC configuration.\n\t2. Modify the 'monitors.yml' generated in step 1 to incorporate monitor changes.\n\t3. Run the utility in 'migrate' mode (monitors will not be commited).\n\t   • Set -f flag to create the monitors.\n\t4. Once confirmed migrated monitors are working as expected, you may disable the original monitors by running the utility in 'disable' mode.\n\t   • Alternatively, you can delete the original monitors by running the utility in 'cleanup' mode.",
 			"subparsers": {
 				"export":  {
 					"description": "Export monitors from MC UI that match asset search pattern.",
@@ -81,10 +382,11 @@
 				}
 			}
 		}
+
 	},
 	"tables": {
 		"link_tables_via_descriptions.py": {
-			"description": "\n[ LINK TABLE(S)/VIEW(S) UTIL ]\n\nAdds hyperlink in assets' description to link tables that match based on name",
+			"description": "\n\nAdds hyperlink in assets' description to link tables that match based on name",
 			"arguments": {
 				"profile": {
 					"default": "default",

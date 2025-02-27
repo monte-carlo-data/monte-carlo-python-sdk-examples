@@ -45,15 +45,17 @@ class Util(object):
         self.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         self.BATCH = int(self.configs['global'].get('BATCH', '1000'))
 
-    def get_warehouses(self) -> list:
+    def get_warehouses(self) -> tuple:
         """Returns a list of warehouse uuids"""
 
         query = Query()
-        query.get_user().account.warehouses.__fields__("name", "uuid")
+        get_user = query.get_user()
+        get_user.account.__fields__("uuid")
+        get_user.account.warehouses.__fields__("name", "uuid")
         res = self.auth.client(query).get_user
         warehouses = [warehouse.uuid for warehouse in res.account.warehouses]
 
-        return warehouses
+        return warehouses, res
 
     def get_domains(self):
 
@@ -278,6 +280,21 @@ class Tables(Util):
         mutation = Mutation()
         create_or_update_catalog_object_metadata = mutation.create_or_update_catalog_object_metadata(**not_none_params)
         create_or_update_catalog_object_metadata.catalog_object_metadata.__fields__("description")
+
+        return mutation
+
+    def bulk_create_or_update_object_properties(self, props: list) -> Mutation:
+        """Create or update a list of properties (tags) for objects (e.g. tables, fields, etc.)
+
+            Returns:
+                Mutation: Mutation object to execute by client.
+
+        """
+
+        mutation = Mutation()
+        bulk_create_or_update_object_properties = mutation.bulk_create_or_update_object_properties(
+            input_object_properties=props)
+        bulk_create_or_update_object_properties.object_properties.__fields__("mcon_id")
 
         return mutation
 
@@ -630,7 +647,7 @@ class Monitors(Util):
     
     def toggle_size_collection(self,mcon: str, enabled: True) -> Mutation:
         mutation=Mutation()
-        mutation.toggle_size_collection(mcon=mcon,enabled=enabled).__fields__("enabled")
+        mutation.toggle_size_collection(mcon=mcon, enabled=enabled).__fields__("enabled")
         
         return mutation
 

@@ -50,7 +50,6 @@ def generate_arg_parser(type, executable):
         parser = argparse.ArgumentParser(description=config[type][executable]['description'].expandtabs(4), formatter_class=formatter)
         parser._optionals.title = "Options"
         parser._positionals.title = None
-        m = ''
 
         if config.get(type).get(executable).get('subparsers'):
             subparsers = parser.add_subparsers(dest='commands', required=True, metavar=" ")
@@ -61,18 +60,23 @@ def generate_arg_parser(type, executable):
                                             description=config[type][executable]['subparsers'][subparser]['description'],
                                             help=config[type][executable]['subparsers'][subparser]['help'])
                 for argument in config[type][executable]['subparsers'][subparser]['arguments']:
+                    args = {'required': config[type][executable]['subparsers'][subparser]['arguments'][argument].get('required', None),
+                            'default': config[type][executable]['subparsers'][subparser]['arguments'][argument].get('default', None),
+                            'help': config[type][executable]['subparsers'][subparser]['arguments'][argument].get('help', None),
+                            'choices': config[type][executable]['subparsers'][subparser]['arguments'][argument].get('choices', None)}
+                    not_none_params = {k: v for k, v in args.items() if v is not None}
                     d[f"{subparser}_parser"].add_argument(f"--{argument}", f"-{argument[0]}",
-                                                          required=config[type][executable]['subparsers'][subparser]['arguments'][argument]['required'],
-                                                          default=config[type][executable]['subparsers'][subparser]['arguments'][argument].get('default', None),
-                                                          help=config[type][executable]['subparsers'][subparser]['arguments'][argument]['help'],
-                                                          metavar=m)
+                                                          **not_none_params)
             return parser, subparsers
         else:
             for argument in config[type][executable]['arguments']:
+                args = {'required': config[type][executable]['arguments'][argument].get('required', None),
+                        'default': config[type][executable]['arguments'][argument].get('default', None),
+                        'help': config[type][executable]['arguments'][argument].get('help', None),
+                        'choices': config[type][executable]['arguments'][argument].get('choices', None)}
+                not_none_params = {k: v for k, v in args.items() if v is not None}
                 parser.add_argument(f"--{argument}", f"-{argument[0]}",
-                                    required=config[type][executable]['arguments'][argument]['required'],
-                                    default=config[type][executable]['arguments'][argument].get('default', None),
-                                    help=config[type][executable]['arguments'][argument]['help'], metavar=m)
+                                    **not_none_params)
 
         return parser
 
