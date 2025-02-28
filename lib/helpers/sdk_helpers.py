@@ -46,27 +46,39 @@ def generate_arg_parser(type, executable):
         config = json.load(file)
 
     formatter = lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=120)
-    parser = argparse.ArgumentParser(description=config[type][executable]['description'].expandtabs(4), formatter_class=formatter)
-    subparsers = parser.add_subparsers(dest='commands', required=True, metavar=" ")
-    parser._optionals.title = "Options"
-    parser._positionals.title = "Commands"
-    m = ''
-
     try:
+        parser = argparse.ArgumentParser(description=config[type][executable]['description'].expandtabs(4), formatter_class=formatter)
+        parser._optionals.title = "Options"
+        parser._positionals.title = None
+
         if config.get(type).get(executable).get('subparsers'):
+            subparsers = parser.add_subparsers(dest='commands', required=True, metavar=" ")
+            parser._positionals.title = "Commands"
             d = {}
             for subparser in config[type][executable]['subparsers']:
                 d[f"{subparser}_parser"] = subparsers.add_parser(subparser,
                                             description=config[type][executable]['subparsers'][subparser]['description'],
                                             help=config[type][executable]['subparsers'][subparser]['help'])
                 for argument in config[type][executable]['subparsers'][subparser]['arguments']:
+                    args = {'required': config[type][executable]['subparsers'][subparser]['arguments'][argument].get('required', None),
+                            'default': config[type][executable]['subparsers'][subparser]['arguments'][argument].get('default', None),
+                            'help': config[type][executable]['subparsers'][subparser]['arguments'][argument].get('help', None),
+                            'choices': config[type][executable]['subparsers'][subparser]['arguments'][argument].get('choices', None)}
+                    not_none_params = {k: v for k, v in args.items() if v is not None}
                     d[f"{subparser}_parser"].add_argument(f"--{argument}", f"-{argument[0]}",
-                                                          required=config[type][executable]['subparsers'][subparser]['arguments'][argument]['required'],
-                                                          default=config[type][executable]['subparsers'][subparser]['arguments'][argument].get('default', None),
-                                                          help=config[type][executable]['subparsers'][subparser]['arguments'][argument]['help'],
-                                                          metavar=m)
+                                                          **not_none_params)
+            return parser, subparsers
+        else:
+            for argument in config[type][executable]['arguments']:
+                args = {'required': config[type][executable]['arguments'][argument].get('required', None),
+                        'default': config[type][executable]['arguments'][argument].get('default', None),
+                        'help': config[type][executable]['arguments'][argument].get('help', None),
+                        'choices': config[type][executable]['arguments'][argument].get('choices', None)}
+                not_none_params = {k: v for k, v in args.items() if v is not None}
+                parser.add_argument(f"--{argument}", f"-{argument[0]}",
+                                    **not_none_params)
 
-        return parser, subparsers
+        return parser
 
     except KeyError as key:
         LOGGER.error(f"Key {key} missing in {PARSER_CONFIG}")
@@ -105,6 +117,7 @@ def batch_objects(objects: list, batch_size: int) -> list:
 
     return batches
 
+
 def parse_input(input_value,delimiter):
     parsed_list = input_value.split(delimiter)
     final_list = []
@@ -115,6 +128,7 @@ def parse_input(input_value,delimiter):
             val = val[:-1]
         final_list.append(val)
     return final_list
+
 
 class PauseProgress:
     def __init__(self, progress: Progress) -> None:

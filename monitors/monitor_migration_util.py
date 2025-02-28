@@ -76,7 +76,7 @@ class MonitorMigrationUtility(Monitors):
 
         """
 
-        warehouses = self.get_warehouses()
+        warehouses, _ = self.get_warehouses()
         asset_search = asset
         namespace = namespace.replace(':', '-')
 
@@ -206,8 +206,8 @@ def main(*args, **kwargs):
         pass
 
     # Initialize Util and run in given mode
-    try:
-        with (Progress() as progress):
+    with (Progress() as progress):
+        try:
             task = progress.add_task("[yellow][RUNNING]...", total=100)
             LogRotater.rotate_logs(retention_period=7)
             progress.update(task, advance=25)
@@ -222,10 +222,11 @@ def main(*args, **kwargs):
                 util.migrate(namespace, args.directory, args.force)
 
             progress.update(task, description="[dodger_blue2][COMPLETE]", advance=100)
-
-    except Exception as e:
-        LOGGER.error(e, exc_info=False)
-        print(f"[red]{traceback.format_exc()}")
+        except Exception as e:
+            LOGGER.error(e, exc_info=False)
+            print(traceback.format_exc())
+        finally:
+            progress.update(task, description="[dodger_blue2 bold][COMPLETE]", advance=100)
 
 
 if __name__ == '__main__':
