@@ -45,15 +45,17 @@ class Util(object):
         self.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         self.BATCH = int(self.configs['global'].get('BATCH', '1000'))
 
-    def get_warehouses(self) -> list:
+    def get_warehouses(self) -> tuple:
         """Returns a list of warehouse uuids"""
 
         query = Query()
-        query.get_user().account.warehouses.__fields__("name", "uuid")
+        get_user = query.get_user()
+        get_user.account.__fields__("uuid")
+        get_user.account.warehouses.__fields__("name", "uuid")
         res = self.auth.client(query).get_user
         warehouses = [warehouse.uuid for warehouse in res.account.warehouses]
 
-        return warehouses
+        return warehouses, res
 
     def get_domains(self):
 
@@ -129,7 +131,8 @@ class Tables(Util):
         super().__init__(profile, config_file, progress)
 
     def get_tables(self, dw_id: str = None, domain_id: str = None, search: str = "", is_monitored: bool = True,
-                   batch_size: Optional[int] = None, after: Optional[str] = None) -> Query:
+                   project_name: str = "", dataset: str = "", batch_size: Optional[int] = None,
+                   after: Optional[str] = None) -> Query:
         """Retrieve table information based on warehouse id and search parameter.
 
             Args:
@@ -137,6 +140,8 @@ class Tables(Util):
                 domain_id(str): Domain UUID from MC.
                 search(str): Database/Schema combination to apply in search filter.
                 is_monitored(bool): Status of table.
+                project_name(str): Database name.
+                dataset(str): Schema name.
                 batch_size(int): Limit of results returned by the response.
                 after(str): Cursor value for next batch.
 
@@ -180,6 +185,22 @@ class Tables(Util):
         get_tables.page_info.__fields__("has_next_page")
 
         return query
+
+    def get_tables_in_db_schema(self, db: str, schema: str):
+
+        raw_items = []
+        mcons = []
+        cursor = None
+        while True:
+            response = self.auth.client(self.get_tables(project_name=db, dataset=schema, after=cursor)).get_tables
+            for table in response.edges:
+                mcons.append(table.node.mcon)
+            if response.page_info.has_next_page:
+                cursor = response.page_info.end_cursor
+            else:
+                break
+
+        return mcons, raw_items
 
     def get_domain_tables(self, domain_name):
 
@@ -251,6 +272,31 @@ class Tables(Util):
                 break
 
         return mcons, raw_items
+
+    @staticmethod
+    def update_asset_description(mcon: str, description: str) -> Mutation:
+
+        not_none_params = {k: v for k, v in locals().items() if v is not None}
+        mutation = Mutation()
+        create_or_update_catalog_object_metadata = mutation.create_or_update_catalog_object_metadata(**not_none_params)
+        create_or_update_catalog_object_metadata.catalog_object_metadata.__fields__("description")
+
+        return mutation
+
+    def bulk_create_or_update_object_properties(self, props: list) -> Mutation:
+        """Create or update a list of properties (tags) for objects (e.g. tables, fields, etc.)
+
+            Returns:
+                Mutation: Mutation object to execute by client.
+
+        """
+
+        mutation = Mutation()
+        bulk_create_or_update_object_properties = mutation.bulk_create_or_update_object_properties(
+            input_object_properties=props)
+        bulk_create_or_update_object_properties.object_properties.__fields__("mcon_id")
+
+        return mutation
 
 
 class Monitors(Util):
@@ -384,7 +430,7 @@ class Monitors(Util):
 
         return monitors, raw_items
 
-    def get_monitors_by_audience(self,audiences: list,batch_size: Optional[int] = None,skip_records: Optional[int] = 0) -> tuple:
+    def get_monitors_by_audience(self, audiences: list, batch_size: Optional[int] = None, skip_records: Optional[int] = 0) -> tuple:
 
         batch_size = self.BATCH if batch_size is None else batch_size
 
@@ -601,7 +647,7 @@ class Monitors(Util):
     
     def toggle_size_collection(self,mcon: str, enabled: True) -> Mutation:
         mutation=Mutation()
-        mutation.toggle_size_collection(mcon=mcon,enabled=enabled).__fields__("enabled")
+        mutation.toggle_size_collection(mcon=mcon, enabled=enabled).__fields__("enabled")
         
         return mutation
 
