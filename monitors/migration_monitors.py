@@ -66,7 +66,7 @@ def write_csv_file(source_tables):
 
 def export_monitors(monitors_file_path, namespace, warehouse_id):
 	print("Exporting monitors")
-	mc_monitors_path = MONITORS_FILE_WORKSPACE + "/cli"
+	mc_monitors_path = MONITORS_FILE_WORKSPACE + "/test"
 	cmd_args = ["montecarlo", "monitors", "convert-to-mac",
 			 "--namespace", namespace, "--project-dir", mc_monitors_path,
 			 "--monitors-file", monitors_file_path, "--dry-run"]

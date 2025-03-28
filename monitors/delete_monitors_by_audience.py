@@ -13,7 +13,7 @@ class DeleteMonitorsByAudience(Monitors):
 		"""Creates an instance of DeleteMonitorsByAudience.
 
 		Args:
-			profile(str): Profile to use stored in montecarlo cli.
+			profile(str): Profile to use stored in montecarlo test.
 			config_file (str): Path to the Configuration File.
 			progress(Progress): Progress bar.
 		"""
@@ -23,7 +23,7 @@ class DeleteMonitorsByAudience(Monitors):
 		self.rule_operator_type = None
 
 	def delete_custom_monitors(self,audiences):
-		_,monitors = self.get_monitors_by_audience(audiences)
+		_, monitors = self.get_monitors_by_audience(audiences)
 		if len(monitors) == 0:
 			LOGGER.error("No monitors exist for given audience(s)")
 			sys.exit(1)
@@ -50,43 +50,23 @@ class DeleteMonitorsByAudience(Monitors):
 def main(*args, **kwargs):
 
 	# Capture Command Line Arguments
-	formatter = lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=120)
-	parser = argparse.ArgumentParser(description="\n[ DELETE MONITORS BY AUDIENCE ]\n\n\t• Delete all monitors within "
-												 "a given audience. Provide the audience name to delete when prompted"
-									 .expandtabs(4), formatter_class=formatter)
-	parser._optionals.title = "Options"
-	parser._positionals.title = "Commands"
-	m = ''
+	parser = sdk_helpers.generate_arg_parser(os.path.basename(os.path.dirname(os.path.abspath(__file__))),
+	                                         os.path.basename(__file__))
 
-	parser.add_argument('--profile', '-p', required=False, default="default",
-						help='Specify an MCD profile name. Uses default otherwise', metavar=m)
-	parser.add_argument('--audience', '-a', required=True,
-						help='Audience for which to delete all monitors. If multiple Audiences, pass all in comma separated list',
-						metavar=m)
-
-	if not args[0]:
+	if not args:
 		args = parser.parse_args(*args, **kwargs)
 	else:
 		sdk_helpers.dump_help(parser, main, *args)
 		args = parser.parse_args(*args, **kwargs)
 
-	# Initialize variables
-	audiences = sdk_helpers.parse_input(args.audience,',')
-	profile = args.profile
+	@sdk_helpers.ensure_progress
+	def run_utility(progress, util, args):
+		util.progress_bar = progress
+		audiences = sdk_helpers.parse_input(args.audience, ',')
+		util.delete_custom_monitors(audiences)
 
-	try:
-		with (Progress() as progress):
-			task = progress.add_task("[yellow][RUNNING]...", total=100)
-			LogRotater.rotate_logs(retention_period=7)
-
-			LOGGER.info(f"running utility using '{args.profile}' profile")
-			util = DeleteMonitorsByAudience(profile,progress=progress)
-			util.delete_custom_monitors(audiences)
-			progress.update(task, description="[dodger_blue2][COMPLETE]", advance=100)
-
-	except Exception as e:
-		LOGGER.error(e,exc_info=False)
-		print(traceback.format_exc())
+	util = DeleteMonitorsByAudience(args.profile)
+	run_utility(util, args)
 
 
 if __name__ == '__main__':

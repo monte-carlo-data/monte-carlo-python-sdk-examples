@@ -10,20 +10,19 @@ logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
 
 class BulkExportMonitors(Monitors):
 
-    def __init__(self, profile, config_file: str = None):
+    def __init__(self, profile, config_file: str = None, progress: Progress = None):
         """Creates an instance of BulkExportMonitors.
 
         Args:
             config_file (str): Path to the Configuration File.
+            progress(Progress): Progress bar.
         """
 
         super().__init__(profile,  config_file)
         self.OUTPUT_FILE = "monitors.yaml"
+        self.progress_bar = progress
 
     def bulk_export_yaml(self, export_name):
-        """
-
-        """
 
         monitor_list, _ = self.get_ui_monitors()
         # Split list of monitors in batches of 500
@@ -42,44 +41,25 @@ class BulkExportMonitors(Monitors):
 def main(*args, **kwargs):
 
     # Capture Command Line Arguments
-    formatter = lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=120)
-    parser = argparse.ArgumentParser(description="\n[ BULK EXPORT UI MONITORS ]\n\n\t• YML file will be written, which can then"
-                                                 " be used when syncing Monitors-as-Code. \n\t• Monitor 'name' is now a "
-                                                 "mandatory parameter to apply MaC. Set -e flag to 'y'\n\t  to get monitor names "
-                                                 "included in the yaml export.".expandtabs(4), formatter_class=formatter)
-    parser._optionals.title = "Options"
-    parser._positionals.title = "Commands"
-    m = ''
+    parser = sdk_helpers.generate_arg_parser(os.path.basename(os.path.dirname(os.path.abspath(__file__))),
+                                             os.path.basename(__file__))
 
-    parser.add_argument('--profile', '-p', required=False, default="default",
-                               help='Specify an MCD profile name. Uses default otherwise', metavar=m)
-    parser.add_argument('--export-name', '-e', required=False, choices=['y', 'n'], default='n',
-                        help='Include the resource name in the export?', metavar=m)
-
-    if not args[0]:
+    if not args:
         args = parser.parse_args(*args, **kwargs)
     else:
         sdk_helpers.dump_help(parser, main, *args)
         args = parser.parse_args(*args, **kwargs)
 
-    # Initialize variables
-    profile = args.profile
-    if args.export_name == 'n':
+    @sdk_helpers.ensure_progress
+    def run_utility(progress, util, args):
+        util.progress_bar = progress
         export_name = False
-    else:
-        export_name = True
-
-    # Initialize Util and run actions
-    try:
-        LOGGER.info(f"running utility using '{args.profile}' profile")
-        util = BulkExportMonitors(profile)
+        if args.export_name == 'y':
+            export_name = True
         util.bulk_export_yaml(export_name)
-    except Exception as e:
-        LOGGER.error(e, exc_info=False)
-        print(traceback.format_exc())
-    finally:
-        LOGGER.info('rotating old log files')
-        LogRotater.rotate_logs(retention_period=7)
+
+    util = BulkExportMonitors(args.profile)
+    run_utility(util, args)
 
 
 if __name__ == '__main__':

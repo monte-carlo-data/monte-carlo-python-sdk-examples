@@ -53,15 +53,15 @@ class MCAuth(object):
 
     def validate_cli(self):
 
-        LOGGER.info("checking montecarlo cli version...")
+        LOGGER.info("checking montecarlo version...")
         proc = subprocess.run(["montecarlo", "--version"], capture_output=True, text=True)
         if proc.returncode != 0:
-            LOGGER.info("montecarlo cli is not installed")
+            LOGGER.info("montecarlo is not installed")
             exit(proc.returncode)
         else:
-            LOGGER.info(f"montecarlo cli present")
+            LOGGER.info(f"montecarlo present")
 
-        LOGGER.info("validating montecarlo cli connection...")
+        LOGGER.info("validating montecarlo connection...")
         proc = subprocess.run(
             ["montecarlo", "--profile", self.profile, "validate"], capture_output=True, text=True
         )

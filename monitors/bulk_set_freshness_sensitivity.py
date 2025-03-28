@@ -17,7 +17,7 @@ class SetFreshnessSensitivity(Monitors, Tables):
 		"""Creates an instance of SetFreshnessSensitivity.
 
 		Args:
-			profile(str): Profile to use stored in montecarlo cli.
+			profile(str): Profile to use stored in montecarlo test.
 			config_file (str): Path to the Configuration File.
 			progress(Progress): Progress bar.
 		"""
@@ -37,7 +37,7 @@ class SetFreshnessSensitivity(Monitors, Tables):
 
 		"""
 		# TODO
-		# should fail if input file does not exist
+		#  should fail if input file does not exist
 
 		file_path = Path(input_file)
 		LOGGER.info(f"starting input file validation...")
@@ -147,49 +147,25 @@ class SetFreshnessSensitivity(Monitors, Tables):
 
 
 def main(*args, **kwargs):
+
 	# Capture Command Line Arguments
-	formatter = lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=120)
-	parser = argparse.ArgumentParser(description="\n[ SET FRESHNESS SENSITIVITY ]\n\n\t• If updating to an explicit "
-	                                             "threshold, create a CSV with 3 columns: [full_table_id,cron,updated_"
-	                                             "in_last_minutes]\n\t• If updating to an automatic threshold, create a "
-	                                             "CSV with 2 columns: [full_table_id,sensitivity]. Sensitivity must be "
-	                                             "one of LOW, MEDIUM or HIGH.".expandtabs(4), formatter_class=formatter)
-	parser._optionals.title = "Options"
-	parser._positionals.title = "Commands"
-	m = ''
+	parser = sdk_helpers.generate_arg_parser(os.path.basename(os.path.dirname(os.path.abspath(__file__))),
+	                                         os.path.basename(__file__))
 
-	parser.add_argument('--profile', '-p', required=False, default="default",
-	                    help='Specify an MCD profile name. Uses default otherwise', metavar=m)
-	parser.add_argument('--input-file', '-i', required=True,
-	                    help='Relative or absolute path to csv file containing freshness monitor configuration',
-	                    metavar=m)
-	parser.add_argument('--warehouse', '-w', required=True, help='Warehouse ID', metavar=m)
-
-	if not args[0]:
+	if not args:
 		args = parser.parse_args(*args, **kwargs)
 	else:
 		sdk_helpers.dump_help(parser, main, *args)
 		args = parser.parse_args(*args, **kwargs)
 
-	# Initialize variables
-	profile = args.profile
-	input_file = args.input_file
-	dw_id = args.warehouse
 
-	# Initialize Util
-	with (Progress() as progress):
-		try:
-			task = progress.add_task("[dark_orange3][RUNNING]...", total=100)
-			LogRotater.rotate_logs(retention_period=7)
-			progress.update(task, advance=25)
-			LOGGER.info(f"running utility using '{args.profile}' profile")
-			util = SetFreshnessSensitivity(profile, progress=progress)
-			util.update_freshness_thresholds(util.validate_input_file(input_file), dw_id)
-		except Exception as e:
-			LOGGER.error(e, exc_info=False)
-			print(traceback.format_exc())
-		finally:
-			progress.update(task, description="[dodger_blue2 bold][COMPLETE]", advance=100)
+	@sdk_helpers.ensure_progress
+	def run_utility(progress, util, args):
+		util.progress_bar = progress
+		util.update_freshness_thresholds(util.validate_input_file(args.input_file), args.warehouse)
+
+	util = SetFreshnessSensitivity(args.profile)
+	run_utility(util, args)
 
 
 if __name__ == '__main__':

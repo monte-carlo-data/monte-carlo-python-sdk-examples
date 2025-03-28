@@ -20,7 +20,7 @@ class Util(object):
         """Creates an instance of Util.
 
         Args:
-            profile (str): Name of the mc cli profile.
+            profile (str): Name of the mc test profile.
             config_file (str): Path to the Configuration File.
             progress (Progress): Progress object used to
         """
@@ -107,30 +107,13 @@ class Admin(Util):
 
         return mutation
 
-    @staticmethod
-    def enable_row_count():
-        """Mutation not available in pycarlo. Return mutation to enable/disable RC monitoring"""
-
-        mutation = f"""
-            mutation updateToggleSizeCollection($mcon: String!, $enabled: Boolean!) {{
-                toggleSizeCollection(
-                    mcon: $mcon
-                    enabled: $enabled	
-                ) {{
-                    enabled
-                }}
-            }}
-        """
-
-        return mutation
-
 
 class Tables(Util):
 
     def __init__(self, profile: str = None, config_file: str = None, progress: Progress = None):
         super().__init__(profile, config_file, progress)
 
-    def get_tables(self, dw_id: str = None, domain_id: str = None, search: str = "", is_monitored: bool = True,
+    def get_tables(self, dw_id: str = None, domain_id: str = None, search: str = "", is_monitored: bool = None,
                    project_name: str = "", dataset: str = "", batch_size: Optional[int] = None,
                    after: Optional[str] = None) -> Query:
         """Retrieve table information based on warehouse id and search parameter.
@@ -150,7 +133,7 @@ class Tables(Util):
 
         """
 
-        not_none_params = {k: v for k, v in locals().items() if v is not None}
+        not_none_params = {k: v for k, v in locals().items() if v}
         if not_none_params.get('self'):
             del not_none_params['self']
         batch_size = self.BATCH if batch_size is None else batch_size
@@ -158,28 +141,6 @@ class Tables(Util):
         query = Query()
         get_tables = query.get_tables(first=batch_size, **not_none_params, is_deleted=False)
         get_tables.edges.node.__fields__("full_table_id", "mcon", "table_type")
-        get_tables.edges.node.table_capabilities.__fields__("has_non_metadata_size_collection")
-        get_tables.page_info.__fields__(end_cursor=True)
-        get_tables.page_info.__fields__("has_next_page")
-
-        return query
-    
-    def get_monitored_tables(self, batch_size: Optional[int] = None,
-                   after: Optional[str] = None) -> Query:
-        """Retrieve table information based on warehouse id and search parameter.
-
-            Returns:
-                Query: Tables that have monitoring enabled, but not query-based volume monitoring.
-
-        """
-
-        batch_size = self.BATCH if batch_size is None else batch_size
-
-        query = Query()
-        get_tables = query.get_tables(first=batch_size, is_deleted=False,
-                                      is_monitored=True,
-                                      **(dict(after=after) if after else {}))
-        get_tables.edges.node.__fields__("mcon")
         get_tables.edges.node.table_capabilities.__fields__("has_non_metadata_size_collection")
         get_tables.page_info.__fields__(end_cursor=True)
         get_tables.page_info.__fields__("has_next_page")
@@ -309,7 +270,7 @@ class Monitors(Util):
         """Displays # of change
 
         Args:
-            cli_output(str): Message from montecarlodata cli
+            cli_output(str): Message from montecarlodata test
         """
 
         deletes = re.findall(r" -.*DELETE", cli_output).__len__()
@@ -340,7 +301,8 @@ class Monitors(Util):
         query = Query()
         get_custom_rules = query.get_custom_rules(first=batch_size, warehouse_uuid=warehouse_id,
                                                   **(dict(after=after) if after else {}))
-        get_custom_rules.edges.node.__fields__("uuid", "rule_type", "is_paused")
+        get_custom_rules.edges.node.__fields__("uuid", "rule_type", "is_paused", "rule_name", "description", "is_deleted",
+                                               "prev_execution_time", "next_execution_time")
         get_custom_rules.edges.node.queries(first=batch_size).edges.node.__fields__("uuid", "entities", "sql_query")
         get_custom_rules.page_info.__fields__(end_cursor=True)
         get_custom_rules.page_info.__fields__("has_next_page")
@@ -386,7 +348,7 @@ class Monitors(Util):
 
         return monitors, raw_items
 
-    def get_monitors_by_entities(self, dw_id: str, asset: str, batch_size: Optional[int] = None) -> tuple:
+    def get_monitors_by_entities(self, dw_id: str = "", asset: str = None, batch_size: Optional[int] = None) -> tuple:
         """Retrieve all monitors based on search criteria. This method only accounts for UNPAUSED and UI monitors.
 
                 Args:
@@ -409,7 +371,7 @@ class Monitors(Util):
             get_monitors = query.get_monitors(search=[asset], limit=batch_size, offset=skip_records,
                                               search_fields=["ENTITIES"])
             get_monitors.__fields__("uuid", "entities", "monitor_type", "monitor_status", "resource_id", "name",
-                                    "namespace")
+                                    "namespace", "description", "prev_execution_time", "next_execution_time", "monitor_run_status")
             response = self.auth.client(query).get_monitors
             if len(response) > 0:
                 raw_items.extend(response)
@@ -645,9 +607,23 @@ class Monitors(Util):
                 LOGGER.error(f"Unable to pause monitor - {monitor_uuid}")
                 return False
     
-    def toggle_size_collection(self,mcon: str, enabled: True) -> Mutation:
+    @staticmethod
+    def toggle_size_collection(mcon: str, enabled: True) -> Mutation:
         mutation=Mutation()
         mutation.toggle_size_collection(mcon=mcon, enabled=enabled).__fields__("enabled")
         
         return mutation
 
+    @staticmethod
+    def get_job_execution_history_logs(rule_uuid: str) -> Query:
+        query = Query()
+        query.get_job_execution_history_logs(custom_rule_uuid=rule_uuid).__fields__("status")
+
+        return query
+
+    @staticmethod
+    def get_latest_incident(monitor_id: str) -> Query:
+        query = Query()
+        query.get_incidents(monitor_ids=[monitor_id], first=1).edges.node.__fields__("uuid", "incident_time")
+
+        return query

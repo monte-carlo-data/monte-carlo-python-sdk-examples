@@ -232,8 +232,11 @@ class CodeScreen(ModalScreen):
 	DEFAULT_CSS = """
 	CodeScreen {
 		#code {
-			border: heavy $accent;
+			width: 1fr;
+			overflow-x: auto;
+			border: heavy $border;
 			margin: 2 4;
+			padding: 1 2;
 			scrollbar-gutter: stable;
 			Static {
 				width: auto;
@@ -250,9 +253,17 @@ class CodeScreen(ModalScreen):
 
 	def compose(self) -> ComposeResult:
 		with ScrollableContainer(id="code"):
+			theme = self.app.theme
+			if 'dark' in self.app.theme:
+				theme = 'github-dark'
+			elif 'light' in self.app.theme:
+				theme = 'stata-light'
+			elif self.app.theme in ['gruvbox', 'catppuccin-mocha', 'tokyo-night', 'flexoki']:
+				theme = 'paraiso-dark'
+
 			yield Static(
 				Syntax(
-					self.code, lexer="python", indent_guides=True, line_numbers=True
+					self.code, lexer="python", indent_guides=True, line_numbers=True, theme=theme
 				),
 				expand=True,
 			)

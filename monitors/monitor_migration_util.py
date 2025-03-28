@@ -1,7 +1,6 @@
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-import pathlib
 from monitors import *
 from lib.helpers import sdk_helpers
 
@@ -16,7 +15,7 @@ class MonitorMigrationUtility(Monitors):
         """Creates an instance of MonitorMigrationUtility.
 
         Args:
-            profile(str): Profile to use stored in montecarlo cli.
+            profile(str): Profile to use stored in montecarlo test.
             config_file (str): Path to the Configuration File.
             progress(Progress): Progress bar.
         """
@@ -49,7 +48,7 @@ class MonitorMigrationUtility(Monitors):
         when converting back to ui. Unique key in DB is formed by:  Key (account_uuid, namespace, rule_name)
 
         Args:
-            monitors_dir(str): Directory where the cli will output the exported monitors.yml
+            monitors_dir(str): Directory where the test will output the exported monitors.yml
             key(str): Key used as a prefix to name each monitor.
 
         """
@@ -106,7 +105,7 @@ class MonitorMigrationUtility(Monitors):
             LOGGER.info(f"monitor ids exported")
 
             LOGGER.info("exporting monitors to monitors-as-code...")
-            mc_monitors_path = file_path / "cli"
+            mc_monitors_path = file_path / "test"
             cmd_args = ["montecarlo", "--profile", self.profile, "monitors", "convert-to-mac",
                         "--namespace", namespace, "--project-dir", mc_monitors_path,
                         "--monitors-file", file_path / self.OUTPUT_FILE, "--dry-run"]
@@ -132,7 +131,7 @@ class MonitorMigrationUtility(Monitors):
 
             LOGGER.info("applying monitor changes...")
             cmd_args = ["montecarlo", "--profile", self.profile, "monitors", "apply",
-                        "--namespace", namespace, "--project-dir", filename.parent / "cli",
+                        "--namespace", namespace, "--project-dir", filename.parent / "test",
                         "--dry-run"]
             if force:
                 del cmd_args[-1]
@@ -190,43 +189,31 @@ def main(*args, **kwargs):
         sdk_helpers.dump_help(parser, main, *args)
         args = parser.parse_args(*args, **kwargs)
 
-    # Initialize variables
-    profile = args.profile
-    namespace = None
-    try:
-        if not args.namespace:
-            if 'asset' in args:
-                if args.asset:
-                    namespace = args.asset
-            elif 'directory' in args:
-                namespace = args.directory.split('/')[-1]
-        else:
-            namespace = args.namespace
-    except:
-        pass
-
-    # Initialize Util and run in given mode
-    with (Progress() as progress):
+    @sdk_helpers.ensure_progress
+    def run_utility(progress, util, args):
+        util.progress_bar = progress
+        namespace = None
         try:
-            task = progress.add_task("[yellow][RUNNING]...", total=100)
-            LogRotater.rotate_logs(retention_period=7)
-            progress.update(task, advance=25)
+            if not args.namespace:
+                if 'asset' in args:
+                    if args.asset:
+                        namespace = args.asset
+                elif 'directory' in args:
+                    namespace = args.directory.split('/')[-1]
+            else:
+                namespace = args.namespace
+        except:
+            pass
 
-            LOGGER.info(f"running utility using '{args.profile}' profile")
-            util = MonitorMigrationUtility(profile, progress=progress)
-            if args.commands.lower() in ['cleanup', 'disable']:
-                util.delete_or_disable(args.directory, args.commands.lower())
-            elif args.commands.lower() == 'export':
-                util.export(args.asset, args.warehouse, namespace)
-            elif args.commands.lower() == 'migrate':
-                util.migrate(namespace, args.directory, args.force)
+        if args.commands.lower() in ['cleanup', 'disable']:
+            util.delete_or_disable(args.directory, args.commands.lower())
+        elif args.commands.lower() == 'export':
+            util.export(args.asset, args.warehouse, namespace)
+        elif args.commands.lower() == 'migrate':
+            util.migrate(namespace, args.directory, args.force)
 
-            progress.update(task, description="[dodger_blue2][COMPLETE]", advance=100)
-        except Exception as e:
-            LOGGER.error(e, exc_info=False)
-            print(traceback.format_exc())
-        finally:
-            progress.update(task, description="[dodger_blue2 bold][COMPLETE]", advance=100)
+    util = MonitorMigrationUtility(args.profile)
+    run_utility(util, args)
 
 
 if __name__ == '__main__':

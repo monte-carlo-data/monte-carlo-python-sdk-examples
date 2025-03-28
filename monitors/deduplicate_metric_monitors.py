@@ -9,7 +9,7 @@ logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
 LOGGER = logging.getLogger()
 
 
-class DeduplicateMetricMonitors(Util):
+class DeduplicateMetricMonitors(Monitors):
 
     def __init__(self, profile, config_file: str = None):
         """Creates an instance of DeduplicateMonitors.
@@ -86,20 +86,8 @@ class DeduplicateMetricMonitors(Util):
 def main(*args, **kwargs):
 
     # Capture Command Line Arguments
-    formatter = lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=120)
-    parser = argparse.ArgumentParser(description='\n[ DEDUPLICATE METRIC MONITORS MaC ]\n\n\tFinds and removes duplicate'
-                                                 ' metric monitors from an input YML file'.expandtabs(4),
-                                     formatter_class=formatter)
-    parser._optionals.title = "Options"
-    parser._positionals.title = "Commands"
-    m = ''
-
-    parser.add_argument('--profile', '-p', required=False, default="default",
-                        help='Specify an MCD profile name. Uses default otherwise', metavar=m)
-    parser.add_argument('--namespace', '-n', required=False,
-                        help='Namespace of monitors configuration.', metavar=m)
-    parser.add_argument('--input', '-i', required=True,
-                        help='Input file path.', metavar=m)
+    parser = sdk_helpers.generate_arg_parser(os.path.basename(os.path.dirname(os.path.abspath(__file__))),
+                                             os.path.basename(__file__))
 
     if not args:
         args = parser.parse_args(*args, **kwargs)
@@ -107,21 +95,13 @@ def main(*args, **kwargs):
         sdk_helpers.dump_help(parser, main, *args)
         args = parser.parse_args(*args, **kwargs)
 
-    # Initialize variables
-    profile = args.profile
-    namespace = args.namespace
+    @sdk_helpers.ensure_progress
+    def run_utility(progress, util, args):
+        util.progress_bar = progress
+        util.deduplicate(args.input, args.namespace)
 
-    # Initialize Util and run in given mode
-    try:
-        LOGGER.info(f"running utility using '{args.profile}' profile")
-        util = DeduplicateMetricMonitors(profile)
-        util.deduplicate(args.input, namespace)
-    except Exception as e:
-        LOGGER.error(e, exc_info=False)
-        print(traceback.format_exc())
-    finally:
-        LOGGER.info('rotating old log files')
-        LogRotater.rotate_logs(retention_period=7)
+    util = DeduplicateMetricMonitors(args.profile)
+    run_utility(util, args)
 
 
 if __name__ == '__main__':
