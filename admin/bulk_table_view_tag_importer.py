@@ -16,7 +16,7 @@ class BulkTableViewTagImporter(Tables):
         """Creates an instance of BulkTableTagImporter.
 
         Args:
-            profile(str): Profile to use stored in montecarlo cli.
+            profile(str): Profile to use stored in montecarlo test.
             config_file (str): Path to the Configuration File.
             progress(Progress): Progress bar.
         """
@@ -39,14 +39,20 @@ class BulkTableViewTagImporter(Tables):
 
         if file.is_file():
             asset_ids = []
+            tag_set = []
             with open(input_file, "r") as input_csv:
                 reader = csv.reader(input_csv, delimiter=",")
                 for row in reader:
-                    if len(row) > 1:
-                        LOGGER.error(f"1 column expected, received {len(row)}")
+                    if len(row) == 2:
+                        tag_set.append(row[1])
+                    elif len(row) > 2:
+                        LOGGER.error(f"1 or 2 column(s) expected in input file, received {len(row)}")
                         sys.exit(1)
                     asset_ids.append(row[0])
-            return asset_ids
+            if len(asset_ids) == 0:
+                LOGGER.error("No rows present in input file")
+                sys.exit(1)
+            return asset_ids, tag_set
         else:
             LOGGER.error("invalid input file")
             sys.exit(1)
@@ -76,29 +82,40 @@ class BulkTableViewTagImporter(Tables):
 
         return [f"MCON++{account}++{warehouse}++{asset_type}++{asset}" for asset in asset_ids]
 
-    def import_tags(self, assets: list, tag: str):
+    @staticmethod
+    def process_tags(mcon, tag_string, properties):
+        """Helper function to process a tag string and append to properties list."""
+        try:
+            for tag in tag_string.split(','):
+                k, v = tag.split(':', 1)  # Avoids ValueError for unexpected input
+                properties.append({
+                    'mcon_id': mcon,
+                    'property_name': k.strip(),
+                    'property_value': v.strip()
+                })
+        except ValueError:
+            LOGGER.debug(f"Skipping invalid tag format: {tag_string}")
+
+    def import_tags(self, assets: list, tags: str):
         """ """
 
-        k, v = tag.split(':')
         properties = []
 
         LOGGER.debug(f"generating payload for {len(assets)} assets")
-        for mcon in assets:
-            properties.append({
-                'mcon_id': mcon,
-                'property_name': k,
-                'property_value': v
-            })
+        for index, mcon in enumerate(assets):
+            if isinstance(tags, list) and index < len(tags):
+                self.process_tags(mcon, tags[index], properties)
+            elif isinstance(tags, str):
+                self.process_tags(mcon, tags, properties)
 
         batches = [properties[i:i + 100] for i in range(0, len(properties), 100)]
-        LOGGER.info("splitting assets in batches of 100")
+        LOGGER.info(f"splitting {len(properties)} properties in batches of 100")
         for batch in batches:
-            LOGGER.info(f"uploading tag for {len(batch)} assets")
             response = self.auth.client(self.bulk_create_or_update_object_properties(batch)).bulk_create_or_update_object_properties
             if not response:
                 LOGGER.error(f"unable to set tags")
             else:
-                LOGGER.info(f"tag set successfully")
+                LOGGER.info(f"tag(s) set successfully")
 
 
 def main(*args, **kwargs):
@@ -113,30 +130,16 @@ def main(*args, **kwargs):
         sdk_helpers.dump_help(parser, main, *args)
         args = parser.parse_args(*args, **kwargs)
 
-    # Initialize variables
-    if ':' not in args.tag:
-        print(f"[red]tag must be of key:value format")
-        sys.exit(1)
-    profile = args.profile
+    @sdk_helpers.ensure_progress
+    def run_utility(progress, util, args):
+        util.progress_bar = progress
+        assets, tags = util.validate_input_file(args.input_file)
+        if args.tag:
+            tags = args.tag
+        util.import_tags(util.generate_mcons(assets, args.warehouse, args.asset_type), tags)
 
-    # Initialize Util and run in given mode
-    with (Progress() as progress):
-        try:
-            task = progress.add_task("[yellow][RUNNING]...", total=100)
-            LogRotater.rotate_logs(retention_period=7)
-            progress.update(task, advance=25)
-
-            LOGGER.info(f"running utility using '{profile}' profile")
-            util = BulkTableViewTagImporter(profile, progress=progress)
-            util.import_tags(util.generate_mcons(util.validate_input_file(args.input_file),
-                                                 args.warehouse, args.asset_type), args.tag)
-
-            progress.update(task, description="[dodger_blue2][COMPLETE]", advance=100)
-        except Exception as e:
-            LOGGER.error(e, exc_info=False)
-            print(traceback.format_exc())
-        finally:
-            progress.update(task, description="[dodger_blue2 bold][COMPLETE]", advance=100)
+    util = BulkTableViewTagImporter(args.profile)
+    run_utility(util, args)
 
 
 if __name__ == '__main__':

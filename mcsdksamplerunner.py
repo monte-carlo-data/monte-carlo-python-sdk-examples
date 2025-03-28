@@ -51,7 +51,7 @@ if __name__ == '__main__':
                     pass
 
 
-                LogHelper.banner()
+                #LogHelper.banner()
                 for path in subpaths:
                     submodule = str(path).split('/')[-1].replace('.py', '').replace('_', '-')
                     script = bind_function(f'_{submodule}')

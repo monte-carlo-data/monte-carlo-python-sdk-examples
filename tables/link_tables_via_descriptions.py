@@ -1,7 +1,6 @@
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-import pathlib
 from tables import *
 from lib.helpers import sdk_helpers
 
@@ -16,7 +15,7 @@ class LinkTableViewUtility(Tables):
         """Creates an instance of LinkTableViewUtility.
 
         Args:
-            profile(str): Profile to use stored in montecarlo cli.
+            profile(str): Profile to use stored in montecarlo test.
             config_file (str): Path to the Configuration File.
             progress(Progress): Progress bar.
         """
@@ -31,12 +30,15 @@ class LinkTableViewUtility(Tables):
             source(str): db:schema
         """
 
-        db, schema = source.split(':')
-        LOGGER.info(f"retrieving assets under {source}...")
-        assets, _ = self.get_tables_in_db_schema(db, schema)
-        if not assets:
-            LOGGER.error(f"no assets found in {source}")
-            return None
+        assets = None
+        if ':' not in source:
+            LOGGER.error("source must be in db:schema format")
+        else:
+            db, schema = source.split(':')
+            LOGGER.info(f"retrieving assets under {source}...")
+            assets, _ = self.get_tables_in_db_schema(db, schema)
+            if not assets:
+                LOGGER.error(f"no assets found in {source}")
 
         return assets
 
@@ -100,25 +102,13 @@ def main(*args, **kwargs):
         sdk_helpers.dump_help(parser, main, *args)
         args = parser.parse_args(*args, **kwargs)
 
-    # Initialize variables
-    profile = args.profile
+    @sdk_helpers.ensure_progress
+    def run_utility(progress, util, args):
+        util.progress_bar = progress
+        util.set_table_descriptions(util.map_assets(args.a_source, args.b_source))
 
-    # Initialize Util and run in given mode
-    try:
-        with (Progress() as progress):
-            task = progress.add_task("[yellow][RUNNING]...", total=100)
-            LogRotater.rotate_logs(retention_period=7)
-            progress.update(task, advance=25)
-
-            LOGGER.info(f"running utility using '{profile}' profile")
-            util = LinkTableViewUtility(profile, progress=progress)
-            util.set_table_descriptions(util.map_assets(args.a_source, args.b_source))
-
-            progress.update(task, description="[dodger_blue2][COMPLETE]", advance=100)
-
-    except Exception as e:
-        LOGGER.error(e, exc_info=False)
-        print(f"[red]{traceback.format_exc()}")
+    util = LinkTableViewUtility(args.profile)
+    run_utility(util, args)
 
 
 if __name__ == '__main__':

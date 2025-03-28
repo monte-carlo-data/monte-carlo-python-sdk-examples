@@ -4,12 +4,34 @@ import pytz
 import argparse
 import os
 import json
+import traceback
+from lib.helpers.logs import LogRotater
 from datetime import datetime, timedelta
 from lib.helpers.logs import LOGGER
 from rich.progress import Progress
 from cronsim import CronSim
 
 PARSER_CONFIG = f'{os.path.dirname(os.path.abspath(__file__))}/parser_config.json'
+
+
+def ensure_progress(func):
+    def wrapper(*args, **kwargs):
+        with Progress() as progress:
+            task = progress.add_task("[yellow][RUNNING]...", total=100)
+            LogRotater.rotate_logs(retention_period=7)
+
+            try:
+                LOGGER.info(f"running utility using '{args[1].profile}' profile")
+                result = func(progress, *args, **kwargs)
+                progress.update(task, description="[dodger_blue2][COMPLETE]", advance=100)
+                return result
+            except Exception as e:
+                LOGGER.error(e, exc_info=False)
+                print(traceback.format_exc())
+            finally:
+                progress.update(task, description="[dodger_blue2 bold][COMPLETE]", advance=100)
+
+    return wrapper
 
 
 def hour_rounder(t):
