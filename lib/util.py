@@ -415,7 +415,7 @@ class Monitors(Util):
 
         return monitors, raw_items
 
-    def get_monitors_by_type(self, dw_id: str, types: list[const.MonitorTypes], is_ootb_replacement: bool = False,
+    def get_monitors_by_type(self, types: list[const.MonitorTypes], dw_id: str = None, is_ootb_replacement: bool = False,
                              mcons: list[str] = None, batch_size: Optional[int] = None) -> tuple:
         """Retrieve all monitors under monitor type(s).
 
@@ -437,6 +437,7 @@ class Monitors(Util):
         raw_items = []
         monitors = []
         skip_records = 0
+
         while True:
             query = Query()
             get_monitors = query.get_monitors(monitor_types=types, mcons=mcons, is_ootb_replacement=is_ootb_replacement,
@@ -449,11 +450,14 @@ class Monitors(Util):
             if len(response) > 0:
                 raw_items.extend(response)
                 for monitor in response:
-                    if monitor.resource_id == dw_id:
+                    if dw_id:
+                        if monitor.resource_id == dw_id:
+                            monitors.append(monitor.uuid)
+                            LOGGER.debug(
+                                f"monitor of type {monitor.monitor_type} found - "
+                                f"{monitor.uuid} - getMonitors")
+                    else:
                         monitors.append(monitor.uuid)
-                        LOGGER.debug(
-                            f"monitor of type {monitor.monitor_type} found - "
-                            f"{monitor.uuid} - getMonitors")
 
             skip_records += self.BATCH
             if len(response) < self.BATCH:
@@ -606,12 +610,12 @@ class Monitors(Util):
             except:
                 LOGGER.error(f"Unable to pause monitor - {monitor_uuid}")
                 return False
-    
+
     @staticmethod
     def toggle_size_collection(mcon: str, enabled: True) -> Mutation:
-        mutation=Mutation()
+        mutation = Mutation()
         mutation.toggle_size_collection(mcon=mcon, enabled=enabled).__fields__("enabled")
-        
+
         return mutation
 
     @staticmethod

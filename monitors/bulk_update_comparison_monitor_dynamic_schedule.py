@@ -4,17 +4,17 @@ import csv
 import datetime
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from monitors import *
-from cron_validator import CronValidator
+from datetime import datetime, timezone
 
 # Initialize logger
 util_name = __file__.split('/')[-1].split('.')[0]
 logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
 
 
-class SetFreshnessSensitivity(Monitors, Tables):
+class UpdateComparisonMonitorDS(Monitors, Tables):
 
 	def __init__(self, profile, config_file: str = None, progress: Progress = None):
-		"""Creates an instance of SetFreshnessSensitivity.
+		"""Creates an instance of UpdateComparisonMonitorDS.
 
 		Args:
 			profile(str): Profile to use stored in montecarlo test.
@@ -36,112 +36,134 @@ class SetFreshnessSensitivity(Monitors, Tables):
 			Any: Dictionary with mappings or None.
 
 		"""
-		# TODO
-		#  should fail if input file does not exist
 
 		file_path = Path(input_file)
 		LOGGER.info(f"starting input file validation...")
+		input_monitors = {}
+
 		if file_path.is_file():
-			input_tables = None
-			auto_required_cols = ['full_table_id', 'sensitivity']
-			explicit_required_cols = ['full_table_id', 'updated_in_last_minutes', 'cron']
+			required_cols = ['monitor_id', 'asset']
 			try:
-				with open(file_path, 'r') as file:
+				with open(file_path, 'r', encoding='utf-8-sig') as file:
 					reader = csv.DictReader(file)
-					input_tables = {}
 					for index, row in enumerate(reader):
 						col_count = len(row)
-						if col_count == 3:
-							self.rule_operator_type = 'EXPLICIT'
-							for col in explicit_required_cols:
-								if not row.get(col):
-									raise ValueError(f"value for '{col}' is missing: line {index + 1}")
-							try:
-								int(row["updated_in_last_minutes"])
-								try:
-									CronValidator.parse(row["cron"])
-									input_tables[row["full_table_id"]] = row
-								except ValueError:
-									raise ValueError(
-										f"value under 'cron' is invalid: line {index + 1}")
-							except ValueError:
-								raise ValueError(
-									f"value under 'updated_in_last_minutes' must be an integer: line {index + 1}")
-						elif col_count == 2:
-							self.rule_operator_type = 'AUTO'
-							for col in auto_required_cols:
-								if not row.get(col):
-									raise ValueError(f"value for '{col}' is missing: line {index + 1}")
-							if row["sensitivity"].upper() not in ['LOW', 'MEDIUM', 'HIGH']:
-								raise ValueError(f"sensitivity must be LOW, MEDIUM or HIGH: line {index + 1}")
-							input_tables[row["full_table_id"]] = row
+						if col_count == 2:
+							input_monitors[row["monitor_id"]] = row["asset"]
 						else:
-							raise ValueError(f"{col_count} columns present in CSV, either {explicit_required_cols} OR "
-							                 f"{auto_required_cols} are required")
+							raise ValueError(f"{col_count} columns present in CSV, {required_cols} are required")
 
 			except ValueError as e:
 				LOGGER.error(f"errors found in file: {e}")
 
-		return input_tables
+		return input_monitors
 
-	def update_freshness_thresholds(self, input_dict: dict, warehouse_id: str):
+	def update_comparison_monitor_dynamic_schedule(
+		self, input_dict: dict
+	):
 
 		if input_dict:
-			LOGGER.info(f"updating freshness rules...")
-			input_fulltableids = [item['full_table_id'] for item in input_dict.values()]
-			input_mcons, _ = self.get_mcons_by_fulltableid(warehouse_id, input_fulltableids)
-			monitor_ids, response = self.get_monitors_by_type(warehouse_id, [const.MonitorTypes.FRESHNESS], True, input_mcons)
-			for index, full_table_id in enumerate(input_fulltableids):
+			LOGGER.info(f"updating comparison rules schedule...")
+			now = datetime.now(timezone.utc).replace(microsecond=0)
+			formatted_time = now.isoformat()
+			for comp_monitor_uuid, target_table in input_dict.items():
+				query = Query()
+				get_tables = query.get_tables(full_table_id=target_table, first=1)
+				get_tables.edges.node.__fields__("mcon")
+				target_mcon = self.auth.client(query).get_tables.edges[0].node.mcon
+
+				query = Query()
+				get_custom_rule = query.get_custom_rule(rule_id=comp_monitor_uuid)
+				get_custom_rule.__fields__(
+					"uuid",
+					"rule_type",
+					"is_paused",
+					"rule_name",
+					"description",
+					"is_deleted",
+					"labels",
+					"notes",
+					"priority",
+					"data_quality_dimension",
+					"tags",
+					"event_rollup_count",
+					"event_rollup_until_changed",
+					"failure_audiences",
+					"query_result_type"
+				)
+
+				get_custom_rule.queries(first=2).edges.node.__fields__("name", "connection_uuid", "warehouse_uuid", "sql_query")
+				get_custom_rule.comparisons.__fields__("comparison_type", "operator", "threshold", "is_threshold_relative")
+
 				try:
-					input_mcons[index]
-				except IndexError:
-					LOGGER.warning(f"skipping {full_table_id} - asset not found")
-					continue
+					source_sql_query, target_sql_query, source_dw_id, target_dw_id, source_conn_id, target_conn_id = (
+						"",
+						"",
+						"",
+						"",
+						"",
+						""
+					)
+					comp_monitor = self.auth.client(query).get_custom_rule
+					for edge in comp_monitor.queries.edges:
+						if edge.node.name == "source":
+							source_sql_query = edge.node.sql_query
+							source_dw_id = edge.node.warehouse_uuid
+							source_conn_id = edge.node.connection_uuid
+						elif edge.node.name == "target":
+							target_sql_query = edge.node.sql_query
+							target_dw_id = edge.node.warehouse_uuid
+							target_conn_id = edge.node.connection_uuid
+					comp_monitor_update_payload = {
+						"query_result_type": comp_monitor.query_result_type,
+						"custom_rule_uuid": comp_monitor.uuid,
+						"source_sql_query": source_sql_query,
+						"target_sql_query": target_sql_query,
+						"source_dw_id": source_dw_id,
+						"target_dw_id": target_dw_id,
+						"source_connection_id": source_conn_id,
+						"target_connection_id": target_conn_id,
+						"comparisons": [
+							{
+								"comparison_type": comp_monitor.comparisons[
+									0
+								].comparison_type,
+								"operator": comp_monitor.comparisons[0].operator,
+								"is_threshold_relative": comp_monitor.comparisons[
+									0
+								].is_threshold_relative,
+								"threshold": comp_monitor.comparisons[0].threshold,
+							}
+						],
+						"description": comp_monitor.description,
+						"notes": comp_monitor.notes,
+						"labels": comp_monitor.labels,
+						"failure_audiences": comp_monitor.failure_audiences,
+						"tags": [
+							{"name": tag.name, "value": tag.value}
+							for tag in comp_monitor.tags
+						],
+						"priority": comp_monitor.priority,
+						"data_quality_dimension": comp_monitor.data_quality_dimension,
+						"schedule_config": {
+							"dynamic_schedule_mcons": [target_mcon],
+							"schedule_type": "DYNAMIC",
+							"start_time": formatted_time,
+						},
+						"event_rollup_until_changed": comp_monitor.event_rollup_until_changed,
+						"event_rollup_count": comp_monitor.event_rollup_count,
+					}
 
-				payload = {
-					"dw_id": warehouse_id,
-					"replaces_ootb": True,
-					"event_rollup_until_changed": True,
-					"timezone": "UTC",
-					"schedule_config": {
-						"schedule_type": "FIXED",
-						"start_time": datetime.datetime.strftime(sdk_helpers.hour_rounder(datetime.datetime.now()),
-						                                        "%Y-%m-%dT%H:%M:%S.%fZ"),
-					},
-					"comparisons": [
-						{
-							"full_table_id": input_mcons[index],
-							"comparison_type": "FRESHNESS",
-						}
-					]
-				}
+					filtered_data = {k: v for k, v in comp_monitor_update_payload.items() if v}
+					mutation = Mutation()
+					mutation.create_or_update_comparison_rule(**filtered_data)
+					LOGGER.debug(filtered_data)
 
-				if self.rule_operator_type == 'EXPLICIT':
-					payload["schedule_config"]["interval_crontab"] = [input_dict[full_table_id]['cron']]
-					payload["comparisons"][0]["operator"] = 'GT'
-					payload["comparisons"][0]["threshold"] = float(input_dict[full_table_id]['updated_in_last_minutes'])
-				else:
-					payload["schedule_config"]["interval_minutes"] = 60
-					payload["comparisons"][0]["operator"] = 'AUTO'
-					payload["comparisons"][0]["threshold_sensitivity"] = input_dict[full_table_id]['sensitivity'].upper()
-
-				for monitor in response:
-					if monitor.rule_comparisons[0].full_table_id == full_table_id:
-						payload["description"] = monitor.description
-						payload["custom_rule_uuid"] = monitor.uuid
-						break
-
-				if not payload.get("description"):
-					payload["description"] = f"Freshness rule for {full_table_id}"
-
-				mutation = Mutation()
-				mutation.create_or_update_freshness_custom_rule(**payload)
-				try:
-					self.progress_bar.update(self.progress_bar.tasks[0].id, advance=75 / len(input_fulltableids))
-					_ = self.auth.client(mutation).create_or_update_freshness_custom_rule
-					LOGGER.info(f"freshness threshold updated successfully for table {full_table_id}")
+					self.progress_bar.update(self.progress_bar.tasks[0].id, advance=75 / len(input_dict))
+					_ = self.auth.client(mutation).create_or_update_comparison_rule
+					LOGGER.info(f"comparison monitor dynamic schedule updated successfully for monitor: {comp_monitor_uuid} - {comp_monitor.description}")
 				except Exception as e:
-					LOGGER.error(f"unable to update freshness threshold for table {full_table_id}")
+					LOGGER.error(f"unable to update comparison monitor dynamic schedule for monitor uuid: {comp_monitor_uuid}")
 					LOGGER.debug(e)
 					continue
 
@@ -150,7 +172,7 @@ def main(*args, **kwargs):
 
 	# Capture Command Line Arguments
 	parser = sdk_helpers.generate_arg_parser(os.path.basename(os.path.dirname(os.path.abspath(__file__))),
-	                                         os.path.basename(__file__))
+											 os.path.basename(__file__))
 
 	if not args:
 		args = parser.parse_args(*args, **kwargs)
@@ -162,9 +184,9 @@ def main(*args, **kwargs):
 	@sdk_helpers.ensure_progress
 	def run_utility(progress, util, args):
 		util.progress_bar = progress
-		util.update_freshness_thresholds(util.validate_input_file(args.input_file), args.warehouse)
+		util.update_comparison_monitor_dynamic_schedule(util.validate_input_file(args.input_file))
 
-	util = SetFreshnessSensitivity(args.profile)
+	util = UpdateComparisonMonitorDS(args.profile)
 	run_utility(util, args)
 
 

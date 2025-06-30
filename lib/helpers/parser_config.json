@@ -18,8 +18,8 @@
 				},
 				"asset_type": {
 					"required": true,
-					"help": "view or table",
-					"choices": ["table", "view"]
+					"help": "view, table, or external",
+					"choices": ["table", "view", "external"]
 				},
 				"tag": {
 					"required": false,
@@ -213,6 +213,20 @@
 				"warehouse": {
 					"required": true,
 					"help": "Warehouse ID."
+				}
+			}
+		},
+		"bulk_update_comparison_monitor_dynamic_schedule.py": {
+			"description": "\nUpdates legacy comparison monitors dynamic schedules in bulk. \n\n* CSV must contain 2 columns: [monitor_id, asset]\n* monitor_id refers to the monitor uuid available in the monitor page URL. It can also be obtained by downloading the Monitors Data Export from the UI: https://getmontecarlo.com/monitors\n* The asset column refers to the full table id that will be tied to the dynamic schedule i.e. database:schema.table",
+			"arguments": {
+				"profile": {
+					"default": "default",
+					"required": false,
+					"help": "Specify an MCD profile name. Uses default otherwise."
+				},
+				"input_file": {
+					"required": true,
+					"help": "Relative or absolute path to csv file."
 				}
 			}
 		}
