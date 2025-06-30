@@ -90,7 +90,7 @@ class SetFreshnessSensitivity(Monitors, Tables):
 			LOGGER.info(f"updating freshness rules...")
 			input_fulltableids = [item['full_table_id'] for item in input_dict.values()]
 			input_mcons, _ = self.get_mcons_by_fulltableid(warehouse_id, input_fulltableids)
-			monitor_ids, response = self.get_monitors_by_type(warehouse_id, [const.MonitorTypes.FRESHNESS], True, input_mcons)
+			monitor_ids, response = self.get_monitors_by_type([const.MonitorTypes.FRESHNESS], warehouse_id, True, input_mcons)
 			for index, full_table_id in enumerate(input_fulltableids):
 				try:
 					input_mcons[index]
