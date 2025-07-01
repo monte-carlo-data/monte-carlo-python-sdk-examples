@@ -150,6 +150,77 @@
 				}
 			}
 		},
+		"monitor_promotion_util.py": {
+			"description": "\nUI Monitor Promotion Util.\n\n1. Run the utility in 'export' mode to generate MaC configuration and merge it to the master monitors.yml.\n\n2. Run the utility in 'promote' mode (monitors will not be commited).\n\n   • Set -f flag to create the monitors.\n\n3. Run the utility in 'cleanup' mode to remove the UI monitors that were migrated to MaC",
+			"subparsers": {
+				"export":  {
+					"description": "Export monitors from MC UI that match asset search pattern.",
+					"help":  "Export monitors from MC UI that match asset search pattern.",
+					"arguments": {
+						"profile":  {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"warehouse": {
+							"required": true,
+							"help": "Warehouse UUID"
+						},
+						"asset": {
+							"required": true,
+							"help": "Asset Name. This can be a project, dataset or table. If UI contains database include it i.e. <database>:<schema>."
+						},
+						"namespace": {
+							"required": false,
+							"help": "Namespace for the exported monitors. Defaults to --asset if not set."
+						},
+						"directory": {
+							"required": true,
+							"help": "Project directory where master monitors.yml resides"
+						}
+					}
+				},
+				"promote":  {
+					"description": "Creates monitors as MaC after export.",
+					"help":  "Creates monitors as MaC after export.",
+					"arguments": {
+						"profile":  {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"namespace": {
+							"required": false,
+							"help": "Namespace of the monitors to deploy."
+						},
+						"directory": {
+							"required": true,
+							"help": "Project directory where master monitors.yml resides"
+						},
+						"force": {
+							"required": false,
+							"help": "Run WITHOUT dry-run mode.",
+							"choices": ["yes", "no"]
+						}
+					}
+				},
+				"cleanup":  {
+					"description": "Removes old monitors.",
+					"help":  "Removes old monitors.",
+					"arguments": {
+						"profile":  {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"directory": {
+							"required": true,
+							"help": "Project directory where output files from 'export' action were generated."
+						}
+					}
+				}
+			}
+		},
 		"bulk_export_monitors.py": {
 			"description": "\nExports monitor configuration as yaml file(MaC). YML file will be written, which can then be used when syncing Monitors-as-Code.\n\n* Monitor 'name' is now a mandatory parameter to apply MaC.\n\n* Set -e flag to 'y' to get monitor names included in the yaml export.",
 			"arguments": {
