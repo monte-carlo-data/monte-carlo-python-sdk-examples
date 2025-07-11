@@ -154,7 +154,7 @@
 			"description": "\nUI Monitor Promotion Util.\n\n1. Run the utility in 'export' mode to generate MaC configuration and merge it to the master monitors.yml.\n\n2. Run the utility in 'promote' mode (monitors will not be commited).\n\n   • Set -f flag to create the monitors.\n\n3. Run the utility in 'cleanup' mode to remove the UI monitors that were migrated to MaC",
 			"subparsers": {
 				"export":  {
-					"description": "Export monitors from MC UI that match asset search pattern.",
+					"description": "Export monitors from MC UI that are ready for promotion (where tag = 'ready_for_promotion').",
 					"help":  "Export monitors from MC UI that match asset search pattern.",
 					"arguments": {
 						"profile":  {
@@ -164,7 +164,7 @@
 						},
 						"namespace": {
 							"required": true,
-							"help": "Namespace for the exported monitors. Defaults to --asset if not set."
+							"help": "Namespace for the exported monitors"
 						},
 						"directory": {
 							"required": true,
