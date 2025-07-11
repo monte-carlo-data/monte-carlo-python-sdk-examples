@@ -16,7 +16,7 @@ from lib.helpers.logs import LOGGER
 class Util(object):
     """Base Model for Utilities/Scripts."""
 
-    def __init__(self, profile: str = None, config_file: str = None, progress: Progress = None, validate: bool = False):
+    def __init__(self, profile: str = None, config_file: str = None, progress: Progress = None, validate: bool = True):
         """Creates an instance of Util.
 
         Args:
@@ -83,8 +83,8 @@ class Util(object):
 
 class Admin(Util):
 
-    def __init__(self, profile: str = None, config_file: str = None, progress: Progress = None):
-        super().__init__(profile, config_file, progress)
+    def __init__(self, profile: str = None, config_file: str = None, progress: Progress = None, validate: bool = True):
+        super().__init__(profile, config_file, progress, validate)
 
     @staticmethod
     def enable_schema_usage(dw_id: str, project: str, dataset: str, rules: list) -> Mutation:
@@ -111,8 +111,8 @@ class Admin(Util):
 
 class Tables(Util):
 
-    def __init__(self, profile: str = None, config_file: str = None, progress: Progress = None):
-        super().__init__(profile, config_file, progress)
+    def __init__(self, profile: str = None, config_file: str = None, progress: Progress = None, validate: bool = True):
+        super().__init__(profile, config_file, progress, validate)
 
     def get_tables(self, dw_id: str = None, domain_id: str = None, search: str = "", is_monitored: bool = None,
                    project_name: str = "", dataset: str = "", batch_size: Optional[int] = None,
@@ -263,8 +263,8 @@ class Tables(Util):
 
 class Monitors(Util):
 
-    def __init__(self, profile: str = None, config_file: str = None, progress: Progress = None):
-        super().__init__(profile, config_file, progress)
+    def __init__(self, profile: str = None, config_file: str = None, progress: Progress = None, validate: bool = True):
+        super().__init__(profile, config_file, progress, validate)
 
     @staticmethod
     def summarize_apply_results(cli_output: str):

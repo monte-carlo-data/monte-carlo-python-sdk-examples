@@ -20,7 +20,7 @@ class GenerateMonitorsYAMLFromCSV(Monitors, Tables):
 			progress(Progress): Progress bar.
 		"""
 
-		super().__init__(profile, config_file, progress)
+		super().__init__(profile, config_file, progress, False)
 		self.progress_bar = progress
 		self.rule_operator_type = None
 
