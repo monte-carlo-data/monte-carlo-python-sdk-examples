@@ -16,7 +16,7 @@ from lib.helpers.logs import LOGGER
 class Util(object):
     """Base Model for Utilities/Scripts."""
 
-    def __init__(self, profile: str = None, config_file: str = None, progress: Progress = None):
+    def __init__(self, profile: str = None, config_file: str = None, progress: Progress = None, validate: bool = False):
         """Creates an instance of Util.
 
         Args:
@@ -39,11 +39,12 @@ class Util(object):
             LOGGER.error(f"config File '{config_file}' specified does not exist")
             sys.exit(1)
 
-        self.auth = mc_auth.MCAuth(self.configs, profile, progress)
-        self.profile = profile
-        self.OUTPUT_DIR = Path(os.path.abspath(__file__)).parent.parent / "output"
-        self.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        self.BATCH = int(self.configs['global'].get('BATCH', '1000'))
+        if validate:
+            self.auth = mc_auth.MCAuth(self.configs, profile, progress)
+            self.profile = profile
+            self.OUTPUT_DIR = Path(os.path.abspath(__file__)).parent.parent / "output"
+            self.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+            self.BATCH = int(self.configs['global'].get('BATCH', '1000'))
 
     def get_warehouses(self) -> tuple:
         """Returns a list of warehouse uuids"""
@@ -474,6 +475,31 @@ class Monitors(Util):
         while True:
             query = Query()
             get_monitors = query.get_monitors(limit=batch_size, offset=skip_records, namespaces=["ui"])
+            get_monitors.__fields__("uuid", "monitor_type", "resource_id", "is_paused", "next_execution_time",
+                                    "monitor_run_status", "connection_id")
+            get_monitors.schedule_config.__fields__("interval_crontab", "interval_minutes",
+                                                    "schedule_type", "start_time", "timezone")
+            response = self.auth.client(query).get_monitors
+            if len(response) > 0:
+                raw_items.extend(response)
+                for monitor in response:
+                    monitors.append(monitor.uuid)
+
+            skip_records += self.BATCH
+            if len(response) < self.BATCH:
+                break
+
+        return monitors, raw_items
+
+    def get_ui_monitors_by_tag(self, tags: list, batch_size: Optional[int] = None, skip_records: Optional[int] = 0) -> tuple:
+
+        batch_size = self.BATCH if batch_size is None else batch_size
+
+        raw_items = []
+        monitors = []
+        while True:
+            query = Query()
+            get_monitors = query.get_monitors(limit=batch_size, offset=skip_records, namespaces=["ui"], tags=tags)
             get_monitors.__fields__("uuid", "monitor_type", "resource_id", "is_paused", "next_execution_time",
                                     "monitor_run_status", "connection_id")
             get_monitors.schedule_config.__fields__("interval_crontab", "interval_minutes",

@@ -21,7 +21,10 @@ def ensure_progress(func):
             LogRotater.rotate_logs(retention_period=7)
 
             try:
-                LOGGER.info(f"running utility using '{args[1].profile}' profile")
+                if hasattr(args[1], 'profile'):
+                    LOGGER.info(f"running utility using '{args[1].profile}' profile")
+                else:
+                    LOGGER.info(f"starting utility execution")
                 result = func(progress, *args, **kwargs)
                 progress.update(task, description="[dodger_blue2][COMPLETE]", advance=100)
                 return result

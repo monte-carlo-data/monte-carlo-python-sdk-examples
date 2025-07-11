@@ -162,16 +162,8 @@
 							"required": false,
 							"help": "Specify an MCD profile name. Uses default otherwise."
 						},
-						"warehouse": {
-							"required": true,
-							"help": "Warehouse UUID"
-						},
-						"asset": {
-							"required": true,
-							"help": "Asset Name. This can be a project, dataset or table. If UI contains database include it i.e. <database>:<schema>."
-						},
 						"namespace": {
-							"required": false,
+							"required": true,
 							"help": "Namespace for the exported monitors. Defaults to --asset if not set."
 						},
 						"directory": {
@@ -188,10 +180,6 @@
 							"default": "default",
 							"required": false,
 							"help": "Specify an MCD profile name. Uses default otherwise."
-						},
-						"namespace": {
-							"required": false,
-							"help": "Namespace of the monitors to deploy."
 						},
 						"directory": {
 							"required": true,
@@ -218,6 +206,19 @@
 							"help": "Project directory where output files from 'export' action were generated."
 						}
 					}
+				}
+			}
+		},
+		"generate_monitors_yaml_from_csv.py": {
+			"description": "\nGenerates monitor configuration as yaml file(MaC) from an input CSV file that contains rules. YML file will be written, which can then be used when syncing Monitors-as-Code.",
+			"arguments": {
+				"input_csv": {
+					"required": true,
+					"help": "Path to CSV file containing all migration rules"
+				},
+				"output_dir": {
+					"required": true,
+					"help": "Directory where MaC files will get generated"
 				}
 			}
 		},
