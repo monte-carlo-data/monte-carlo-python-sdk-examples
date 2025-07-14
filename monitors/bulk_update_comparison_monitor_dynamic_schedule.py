@@ -1,10 +1,7 @@
 import os
 import sys
-import csv
-import datetime
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from monitors import *
-from datetime import datetime, timezone
 
 # Initialize logger
 util_name = __file__.split('/')[-1].split('.')[0]
@@ -164,7 +161,7 @@ class UpdateComparisonMonitorDS(Monitors, Tables):
 					LOGGER.info(f"comparison monitor dynamic schedule updated successfully for monitor: {comp_monitor_uuid} - {comp_monitor.description}")
 				except Exception as e:
 					LOGGER.error(f"unable to update comparison monitor dynamic schedule for monitor uuid: {comp_monitor_uuid}")
-					LOGGER.debug(e)
+					LOGGER.error(e)
 					continue
 
 

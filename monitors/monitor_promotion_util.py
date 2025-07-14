@@ -45,45 +45,32 @@ class MonitorMigrationUtility(Monitors):
         return file_path
 
     @staticmethod
-    def replace_monitor_names(monitors_dir: str, key: str):
-        """Reads YAML file after export and replaces each monitor name to be unique so that there are no conflicts
-        when converting back to ui. Unique key in DB is formed by:  Key (account_uuid, namespace, rule_name)
+    def prepare_and_merge_monitors(export_path: Path, target_path: Path, key: str):
+        """
+        Updates monitor names, removes specific tags, and merges the exported monitors into the target monitors.yml file.
 
         Args:
-            monitors_dir(str): Directory where the test will output the exported monitors.yml
-            key(str): Key used as a prefix to name each monitor.
-
+            export_path (Path): Path to the exported monitors.yml.
+            target_path (Path): Path to the target monitors.yml to merge into.
+            key (str): A unique key used to generate unique monitor names.
         """
-
-        LOGGER.info("updating monitor names...")
-        with open(f"{monitors_dir}/monitors.yml", 'r') as file:
-            yaml_dict = yaml.safe_load(file)
-            monitors = yaml_dict.get("montecarlo")
-
-        for monitor_type in monitors:
-            for monitor in monitors[monitor_type]:
-                if monitor.get('name'):
-                    monitor['name'] = f"{monitor_type}_{key}_{uuid.uuid4()}"
-
-        with open(f"{monitors_dir}/monitors.yml", 'w') as file:
-            yaml.safe_dump(yaml_dict, file, sort_keys=False)
-
-        LOGGER.info(f"monitor names updated successfully")
-
-    @staticmethod
-    def merge_monitors_into_target(export_path: Path, target_path: Path):
-        """
-        Merges monitors from exported file into a target monitors.yml file.
-
-        Args:
-            export_path (Path): Path to the source monitors.yml created by export.
-            target_path (Path): Path to the destination monitors.yml to merge into.
-        """
-        LOGGER.info(f"Merging monitors from {export_path} into {target_path}")
+        LOGGER.info(f"Processing exported monitors from {export_path} for merging")
 
         if not export_path.exists():
             LOGGER.error(f"Exported monitors file not found: {export_path}")
             return
+
+        with open(export_path, "r") as f:
+            export_yaml = yaml.safe_load(f) or {}
+
+        exported_mc = export_yaml.get("montecarlo", {})
+        for monitor_type, monitors in exported_mc.items():
+            for monitor in monitors:
+                if monitor.get("name"):
+                    monitor["name"] = f"{monitor_type}_{key}_{uuid.uuid4()}"
+                if monitor.get("tags"):
+                    monitor["tags"] = [tag for tag in monitor["tags"] if tag.get("name") != "ready_for_promotion"
+                                       and tag.get("name") != "team"]
 
         if target_path.exists():
             with open(target_path, "r") as f:
@@ -91,12 +78,7 @@ class MonitorMigrationUtility(Monitors):
         else:
             target_yaml = {}
 
-        with open(export_path, "r") as f:
-            exported_yaml = yaml.safe_load(f) or {}
-
-        exported_mc = exported_yaml.get("montecarlo", {})
         target_mc = target_yaml.setdefault("montecarlo", {})
-
         for section, monitors in exported_mc.items():
             if not isinstance(monitors, list):
                 continue
@@ -109,25 +91,22 @@ class MonitorMigrationUtility(Monitors):
         with open(target_path, "w") as f:
             yaml.safe_dump(target_yaml, f, sort_keys=False)
 
-        LOGGER.info(f"Merged monitors successfully into {target_path}")
+        LOGGER.info(
+            f"Updated names, cleaned tags, and merged monitors into {target_path}"
+        )
 
-    def export(self, asset: str, warehouse: str, namespace: str, mac_directory: str):
+    def export(self, namespace: str, mac_directory: str):
         """
 
         """
 
-        warehouses, _ = self.get_warehouses()
-        asset_search = asset
-        namespace = namespace.replace(':', '-')
-
-        LOGGER.info(f"retrieving custom monitors for asset {asset_search}...")
+        tags = [{'name': 'team', 'value': namespace}]
+        LOGGER.info(f"retrieving UI monitors with tag:{tags}...")
         monitors = []
-        for dw_id in warehouses:
-            monitors.extend(self.get_custom_rules_with_assets(dw_id, asset_search)[0])
-            self.progress_bar.update(self.progress_bar.tasks[0].id, advance=50/len(warehouses))
-        LOGGER.debug(f"Monitor count = {len(monitors)}")
-        dw_id = warehouse
-        monitors.extend(self.get_monitors_by_entities(dw_id, asset_search)[0])
+        monitors.extend(self.get_ui_monitors_by_tag(tags)[0])
+        self.progress_bar.update(
+            self.progress_bar.tasks[0].id, advance=50 / len(monitors)
+        )
         LOGGER.debug(f"Monitor count = {len(monitors)}")
 
         # using set() to remove duplicated from list, if any
@@ -159,24 +138,20 @@ class MonitorMigrationUtility(Monitors):
             else:
                 LOGGER.info(f"export completed")
                 LogHelper.split_message(cmd.stdout)
-                self.replace_monitor_names(mc_monitors_path / "montecarlo", namespace)
-                # Merge into target file
                 exported_file = mc_monitors_path / "montecarlo" / "monitors.yml"
-                target_file = Path(
-                    os.path.join(mac_directory, "monitors.yml")
-                )
-                self.merge_monitors_into_target(exported_file, target_file)
+                target_file = Path(os.path.join(mac_directory, "monitors.yml"))
+                self.prepare_and_merge_monitors(exported_file, target_file, namespace)
         else:
             LOGGER.warning(f"{len(monitors)} custom monitors found matching search criteria")
 
-    def promote(self, namespace, directory: str, force: bool):
+    def promote(self, directory: str, force: bool):
 
         filename = self.validate_project_dir(directory)
         if filename:
 
             LOGGER.info("applying monitor changes...")
             cmd_args = ["montecarlo", "--profile", self.profile, "monitors", "apply",
-                        "--namespace", namespace, "--project-dir", filename.parent,
+                        "--project-dir", filename.parent,
                         "--dry-run"]
             if force:
                 del cmd_args[-1]
@@ -237,25 +212,13 @@ def main(*args, **kwargs):
     @sdk_helpers.ensure_progress
     def run_utility(progress, util, args):
         util.progress_bar = progress
-        namespace = None
-        try:
-            if not args.namespace:
-                if 'asset' in args:
-                    if args.asset:
-                        namespace = args.asset
-                elif 'directory' in args:
-                    namespace = args.directory.split('/')[-1]
-            else:
-                namespace = args.namespace
-        except:
-            pass
 
         if args.commands.lower() in ['cleanup', 'disable']:
             util.delete_or_disable(args.directory, args.commands.lower())
         elif args.commands.lower() == 'export':
-            util.export(args.asset, args.warehouse, namespace, args.directory)
+            util.export(args.namespace, args.directory)
         elif args.commands.lower() == 'promote':
-            util.promote(namespace, args.directory, args.force)
+            util.promote(args.directory, args.force)
 
     util = MonitorMigrationUtility(args.profile)
     run_utility(util, args)
