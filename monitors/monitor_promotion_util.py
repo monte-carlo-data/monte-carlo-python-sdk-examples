@@ -11,10 +11,10 @@ util_name = os.path.basename(__file__).split('.')[0]
 logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
 
 
-class MonitorMigrationUtility(Monitors):
+class MonitorPromotionUtility(Monitors):
 
 	def __init__(self, profile, config_file: str = None, progress: Progress = None):
-		"""Creates an instance of MonitorMigrationUtility.
+		"""Creates an instance of MonitorPromotionUtility.
 
 		Args:
 			profile(str): Profile to use stored in montecarlo test.
@@ -223,7 +223,7 @@ def main(*args, **kwargs):
 		elif args.commands.lower() == 'promote':
 			util.promote(args.directory, args.force)
 
-	util = MonitorMigrationUtility(args.profile)
+	util = MonitorPromotionUtility(args.profile)
 	run_utility(util, args)
 
 
