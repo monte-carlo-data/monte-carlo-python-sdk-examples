@@ -10,14 +10,14 @@
 				},
 				"input_file": {
 					"required": true,
-					"help": "Path to CSV file containing asset names"
+					"help": "Path to CSV file containing asset names. The file may contain 1 or 2 columns: \nThe first column can either contain the full asset name(db:schema.table) or the MCON value and the second(optional) will be the key:value of the tag"
 				},
 				"warehouse": {
-					"required": true,
+					"required": false,
 					"help": "Warehouse name as it appears in MC"
 				},
 				"asset_type": {
-					"required": true,
+					"required": false,
 					"help": "view, table, or external",
 					"choices": ["table", "view", "external"]
 				},

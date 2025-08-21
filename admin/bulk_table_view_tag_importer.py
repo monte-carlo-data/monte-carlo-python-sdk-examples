@@ -15,11 +15,11 @@ class BulkTableViewTagImporter(Tables):
     def __init__(self, profile, config_file: str = None, progress: Progress = None):
         """Creates an instance of BulkTableTagImporter.
 
-        Args:
-            profile(str): Profile to use stored in montecarlo test.
-            config_file (str): Path to the Configuration File.
-            progress(Progress): Progress bar.
-        """
+		Args:
+			profile(str): Profile to use stored in montecarlo test.
+			config_file (str): Path to the Configuration File.
+			progress(Progress): Progress bar.
+		"""
 
         super().__init__(profile,  config_file, progress)
         self.progress_bar = progress
@@ -28,12 +28,12 @@ class BulkTableViewTagImporter(Tables):
     def validate_input_file(input_file: str) -> any:
         """Ensure path given exists.
 
-        Args:
-            input_file(str): Input file.
+		Args:
+			input_file(str): Input file.
 
-        Returns:
-            Path: Full path to input file.
-        """
+		Returns:
+			Path: Full path to input file.
+		"""
 
         file = Path(input_file)
 
@@ -57,15 +57,29 @@ class BulkTableViewTagImporter(Tables):
             LOGGER.error("invalid input file")
             sys.exit(1)
 
-    def generate_mcons(self, asset_ids: list, warehouse_name: str, asset_type: str):
+    def generate_mcons(self, asset_ids: list, warehouse_name: str = None, asset_type: str = None):
         """Running one call per asset to obtain the MCON can be expensive, instead, the MCON can be predicted
-        and this method will use the asset type from the input file to generate it.
+		and this method will use the asset type from the input file to generate it.
 
-        Args:
-            asset_ids(list): list of asset ids
-            warehouse_name(str): name of warehouse as it appears in MC
-            asset_type(str): table or view
-        """
+		Args:
+			asset_ids(list): list of asset ids
+			warehouse_name(str): name of warehouse as it appears in MC
+			asset_type(str): table or view
+		"""
+
+        mcons = []
+        for asset in asset_ids:
+            if "MCON" in asset:
+                mcons.append(asset)
+
+        if len(mcons) > 0:
+            return mcons
+
+        if not asset_type or not warehouse_name:
+            LOGGER.error(
+                "asset_type/warehouse are required when the asset is not an MCON"
+            )
+            sys.exit(1)
 
         _, raw = self.get_warehouses()
         account, warehouse = None, None
@@ -89,10 +103,10 @@ class BulkTableViewTagImporter(Tables):
             for tag in tag_string.split(','):
                 k, v = tag.split(':', 1)  # Avoids ValueError for unexpected input
                 properties.append({
-                    'mcon_id': mcon,
-                    'property_name': k.strip(),
-                    'property_value': v.strip()
-                })
+					'mcon_id': mcon,
+					'property_name': k.strip(),
+					'property_value': v.strip()
+				})
         except ValueError:
             LOGGER.debug(f"Skipping invalid tag format: {tag_string}")
 
@@ -120,27 +134,27 @@ class BulkTableViewTagImporter(Tables):
 
 def main(*args, **kwargs):
 
-    # Capture Command Line Arguments
-    parser = sdk_helpers.generate_arg_parser(os.path.basename(os.path.dirname(os.path.abspath(__file__))),
-                                             os.path.basename(__file__))
+	# Capture Command Line Arguments
+	parser = sdk_helpers.generate_arg_parser(os.path.basename(os.path.dirname(os.path.abspath(__file__))),
+											 os.path.basename(__file__))
 
-    if not args:
-        args = parser.parse_args(*args, **kwargs)
-    else:
-        sdk_helpers.dump_help(parser, main, *args)
-        args = parser.parse_args(*args, **kwargs)
+	if not args:
+		args = parser.parse_args(*args, **kwargs)
+	else:
+		sdk_helpers.dump_help(parser, main, *args)
+		args = parser.parse_args(*args, **kwargs)
 
-    @sdk_helpers.ensure_progress
-    def run_utility(progress, util, args):
-        util.progress_bar = progress
-        assets, tags = util.validate_input_file(args.input_file)
-        if args.tag:
-            tags = args.tag
-        util.import_tags(util.generate_mcons(assets, args.warehouse, args.asset_type), tags)
+	@sdk_helpers.ensure_progress
+	def run_utility(progress, util, args):
+		util.progress_bar = progress
+		assets, tags = util.validate_input_file(args.input_file)
+		if args.tag:
+			tags = args.tag
+		util.import_tags(util.generate_mcons(assets, args.warehouse, args.asset_type), tags)
 
-    util = BulkTableViewTagImporter(args.profile)
-    run_utility(util, args)
+	util = BulkTableViewTagImporter(args.profile)
+	run_utility(util, args)
 
 
 if __name__ == '__main__':
-    main()
+	main()

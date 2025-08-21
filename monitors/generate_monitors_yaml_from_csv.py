@@ -3,6 +3,7 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from monitors import *
+import re
 
 # Initialize logger
 util_name = __file__.split('/')[-1].split('.')[0]
@@ -71,7 +72,7 @@ class GenerateMonitorsYAMLFromCSV(Monitors, Tables):
 				"start_time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
 			}
 
-        elif freq_raw and "MCON" in freq_raw:
+        elif freq_raw and re.match(r"^[^:]+:[^.]+\.[^\.]+$", freq_raw):
             schedule = {
 				"type": "dynamic",
 				"dynamic_schedule_tables": [freq_raw],
