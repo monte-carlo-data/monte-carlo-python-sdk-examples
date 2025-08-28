@@ -95,7 +95,7 @@ class MonitorPromotionUtility(Monitors):
 			f"Updated names, cleaned tags, and merged monitors into {target_path}"
 		)
 
-	def export(self, namespace: str, mac_directory: str):
+	def export(self, namespace_src: str, namespace_tgt: str, mac_directory: str):
 		"""
 
 		"""
@@ -115,7 +115,7 @@ class MonitorPromotionUtility(Monitors):
 		if len(monitors) > 0:
 			LOGGER.info(f"{len(monitors)} custom monitors found")
 			# Write monitor ids to CSV
-			file_path = Path(self.OUTPUT_DIR) / util_name / namespace
+			file_path = Path(self.OUTPUT_DIR) / util_name / namespace_src
 			file_path.mkdir(parents=True, exist_ok=True)
 			LOGGER.info(f"writing custom monitor ids to output file...")
 			filename = file_path / self.OUTPUT_FILE
@@ -127,7 +127,7 @@ class MonitorPromotionUtility(Monitors):
 			LOGGER.info("exporting monitors to monitors-as-code...")
 			mc_monitors_path = file_path / "tmp"
 			cmd_args = ["montecarlo", "--profile", self.profile, "monitors", "convert-to-mac",
-						"--namespace", namespace, "--project-dir", mc_monitors_path,
+						"--namespace", namespace_src, "--project-dir", mc_monitors_path,
 						"--monitors-file", file_path / self.OUTPUT_FILE, "--dry-run"]
 			cmd = subprocess.run(cmd_args,
 								 capture_output=True, text=True)
@@ -139,10 +139,10 @@ class MonitorPromotionUtility(Monitors):
 				LOGGER.info(f"export completed")
 				LogHelper.split_message(cmd.stdout)
 				exported_file = mc_monitors_path / "montecarlo" / "monitors.yml"
-				mac_directory = Path(mac_directory) / namespace
+				mac_directory = Path(mac_directory) / namespace_tgt
 				mac_directory.mkdir(parents=True, exist_ok=True)
 				target_file = Path(os.path.join(mac_directory, "monitors.yml"))
-				self.prepare_and_merge_monitors(exported_file, target_file, namespace)
+				self.prepare_and_merge_monitors(exported_file, target_file, namespace_tgt)
 		else:
 			LOGGER.warning(f"{len(monitors)} custom monitors found matching search criteria")
 
@@ -219,7 +219,7 @@ def main(*args, **kwargs):
 		if args.commands.lower() in ['cleanup', 'disable']:
 			util.delete_or_disable(args.directory, args.commands.lower())
 		elif args.commands.lower() == 'export':
-			util.export(args.namespace, args.directory)
+			util.export(args.source_namespace, args.target_namespace, args.directory)
 		elif args.commands.lower() == 'promote':
 			util.promote(args.directory, args.force)
 

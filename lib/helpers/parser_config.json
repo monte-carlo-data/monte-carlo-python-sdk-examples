@@ -162,9 +162,13 @@
 							"required": false,
 							"help": "Specify an MCD profile name. Uses default otherwise."
 						},
-						"namespace": {
+						"source_namespace": {
 							"required": true,
-							"help": "Namespace for the exported monitors"
+							"help": "Temporary namespace for the exported monitors"
+						},
+                        "target_namespace": {
+							"required": true,
+							"help": "Namespace where the monitor configuration will be merged"
 						},
 						"directory": {
 							"required": true,
