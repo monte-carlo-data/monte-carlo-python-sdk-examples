@@ -26,12 +26,12 @@ def getDefaultWarehouse(mcdId,mcdToken):
 		quit()
 
 def get_table_query(dwId,first: Optional[int] = 1000, after: Optional[str] = None) -> Query:
-    query = Query()
-    get_tables = query.get_tables(first=first, dw_id=dwId, is_deleted=False, **(dict(after=after) if after else {}))
-    get_tables.edges.node.__fields__("full_table_id","mcon")
-    get_tables.page_info.__fields__(end_cursor=True)
-    get_tables.page_info.__fields__("has_next_page")
-    return query
+	query = Query()
+	get_tables = query.get_tables(first=first, dw_id=dwId, is_deleted=False, **(dict(after=after) if after else {}))
+	get_tables.edges.node.__fields__("full_table_id","mcon")
+	get_tables.page_info.__fields__(end_cursor=True)
+	get_tables.page_info.__fields__("has_next_page")
+	return query
 
 def getMcons(mcdId,mcdToken,dwId):
 	client=Client(session=Session(mcd_id=mcdId,mcd_token=mcdToken))
@@ -53,11 +53,11 @@ def bulkImportTagsFromCSV(mcdId,mcdToken,csvFileName, mconDict):
 	tags_list=[]
 	bulk_tag_query = """
 		mutation bulkCreateOrUpdateObjectProperties($inputObjectProperties:[InputObjectProperty]!) {
-  			bulkCreateOrUpdateObjectProperties(inputObjectProperties:$inputObjectProperties) {
-    			objectProperties {
-      				mconId
-    			}
-  			}
+			bulkCreateOrUpdateObjectProperties(inputObjectProperties:$inputObjectProperties) {
+				objectProperties {
+					mconId
+				}
+			}
 		}
 		"""
 	with open(csvFileName,"r") as tags_to_import:
