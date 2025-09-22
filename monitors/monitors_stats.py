@@ -5,7 +5,7 @@ from monitors import *
 import csv
 
 # Initialize LOGGER
-util_name = __file__.split('/')[-1].split('.')[0]
+util_name = os.path.splitext(os.path.basename(__file__))[0]
 logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
 
 
