@@ -12,8 +12,8 @@ logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
 
 class BulkTableViewTagImporter(Tables):
 
-    def __init__(self, profile, config_file: str = None, progress: Progress = None):
-        """Creates an instance of BulkTableTagImporter.
+	def __init__(self, profile, config_file: str = None, progress: Progress = None):
+		"""Creates an instance of BulkTableTagImporter.
 
 		Args:
 			profile(str): Profile to use stored in montecarlo test.
@@ -21,12 +21,12 @@ class BulkTableViewTagImporter(Tables):
 			progress(Progress): Progress bar.
 		"""
 
-        super().__init__(profile,  config_file, progress)
-        self.progress_bar = progress
+		super().__init__(profile,  config_file, progress)
+		self.progress_bar = progress
 
-    @staticmethod
-    def validate_input_file(input_file: str) -> any:
-        """Ensure path given exists.
+	@staticmethod
+	def validate_input_file(input_file: str) -> any:
+		"""Ensure path given exists.
 
 		Args:
 			input_file(str): Input file.
@@ -35,30 +35,30 @@ class BulkTableViewTagImporter(Tables):
 			Path: Full path to input file.
 		"""
 
-        file = Path(input_file)
+		file = Path(input_file)
 
-        if file.is_file():
-            asset_ids = []
-            tag_set = []
-            with open(input_file, "r") as input_csv:
-                reader = csv.reader(input_csv, delimiter=",")
-                for row in reader:
-                    if len(row) == 2:
-                        tag_set.append(row[1])
-                    elif len(row) > 2:
-                        LOGGER.error(f"1 or 2 column(s) expected in input file, received {len(row)}")
-                        sys.exit(1)
-                    asset_ids.append(row[0])
-            if len(asset_ids) == 0:
-                LOGGER.error("No rows present in input file")
-                sys.exit(1)
-            return asset_ids, tag_set
-        else:
-            LOGGER.error("invalid input file")
-            sys.exit(1)
+		if file.is_file():
+			asset_ids = []
+			tag_set = []
+			with open(input_file, "r") as input_csv:
+				reader = csv.reader(input_csv, delimiter=",")
+				for row in reader:
+					if len(row) == 2:
+						tag_set.append(row[1])
+					elif len(row) > 2:
+						LOGGER.error(f"1 or 2 column(s) expected in input file, received {len(row)}")
+						sys.exit(1)
+					asset_ids.append(row[0])
+			if len(asset_ids) == 0:
+				LOGGER.error("No rows present in input file")
+				sys.exit(1)
+			return asset_ids, tag_set
+		else:
+			LOGGER.error("invalid input file")
+			sys.exit(1)
 
-    def generate_mcons(self, asset_ids: list, warehouse_name: str = None, asset_type: str = None):
-        """Running one call per asset to obtain the MCON can be expensive, instead, the MCON can be predicted
+	def generate_mcons(self, asset_ids: list, warehouse_name: str = None, asset_type: str = None):
+		"""Running one call per asset to obtain the MCON can be expensive, instead, the MCON can be predicted
 		and this method will use the asset type from the input file to generate it.
 
 		Args:
@@ -67,69 +67,76 @@ class BulkTableViewTagImporter(Tables):
 			asset_type(str): table or view
 		"""
 
-        mcons = []
-        for asset in asset_ids:
-            if "MCON" in asset:
-                mcons.append(asset)
+		mcons = []
+		for asset in asset_ids:
+			if "MCON" in asset:
+				mcons.append(asset)
 
-        if len(mcons) > 0:
-            return mcons
+		if len(mcons) > 0:
+			return mcons
 
-        if not asset_type or not warehouse_name:
-            LOGGER.error(
-                "asset_type/warehouse are required when the asset is not an MCON"
-            )
-            sys.exit(1)
+		if not asset_type or not warehouse_name:
+			LOGGER.error(
+				"asset_type/warehouse are required when the asset is not an MCON"
+			)
+			sys.exit(1)
 
-        _, raw = self.get_warehouses()
-        account, warehouse = None, None
-        for acct in raw:
-            account = raw[acct].uuid
-            for wh in raw[acct].warehouses:
-                if wh.name == warehouse_name:
-                    warehouse = wh.uuid
-                    break
+		_, raw = self.get_warehouses()
+		account, warehouse = None, None
+		for acct in raw:
+			account = raw[acct].uuid
+			for wh in raw[acct].warehouses:
+				if wh.name == warehouse_name:
+					warehouse = wh.uuid
+					break
 
-        if None in (warehouse, account):
-            LOGGER.error("unable to locate account/warehouse. Ensure the warehouse provided is spelled correctly")
-            sys.exit(1)
+		if None in (warehouse, account):
+			LOGGER.error("unable to locate account/warehouse. Ensure the warehouse provided is spelled correctly")
+			sys.exit(1)
 
-        return [f"MCON++{account}++{warehouse}++{asset_type}++{asset}" for asset in asset_ids]
+		return [f"MCON++{account}++{warehouse}++{asset_type}++{asset}" for asset in asset_ids]
 
-    @staticmethod
-    def process_tags(mcon, tag_string, properties):
-        """Helper function to process a tag string and append to properties list."""
-        try:
-            for tag in tag_string.split(','):
-                k, v = tag.split(':', 1)  # Avoids ValueError for unexpected input
-                properties.append({
+	@staticmethod
+	def process_tags(mcon, tag_string, properties):
+		"""Helper function to process a tag string and append to properties list."""
+
+		for tag in tag_string.split(','):
+			try:
+				k, v = tag.split(':', 1)  # Avoids ValueError for unexpected input
+				properties.append({
 					'mcon_id': mcon,
 					'property_name': k.strip(),
 					'property_value': v.strip()
 				})
-        except ValueError:
-            LOGGER.debug(f"Skipping invalid tag format: {tag_string}")
+			except ValueError:
+				if tag != '':
+					properties.append(
+						{
+							"mcon_id": mcon,
+							"property_name": tag
+						}
+					)
 
-    def import_tags(self, assets: list, tags: str):
-        """ """
+	def import_tags(self, assets: list, tags: str):
+		""" """
 
-        properties = []
+		properties = []
 
-        LOGGER.debug(f"generating payload for {len(assets)} assets")
-        for index, mcon in enumerate(assets):
-            if isinstance(tags, list) and index < len(tags):
-                self.process_tags(mcon, tags[index], properties)
-            elif isinstance(tags, str):
-                self.process_tags(mcon, tags, properties)
+		LOGGER.debug(f"generating payload for {len(assets)} assets")
+		for index, mcon in enumerate(assets):
+			if isinstance(tags, list) and index < len(tags):
+				self.process_tags(mcon, tags[index], properties)
+			elif isinstance(tags, str):
+				self.process_tags(mcon, tags, properties)
 
-        batches = [properties[i:i + 100] for i in range(0, len(properties), 100)]
-        LOGGER.info(f"splitting {len(properties)} properties in batches of 100")
-        for batch in batches:
-            response = self.auth.client(self.bulk_create_or_update_object_properties(batch)).bulk_create_or_update_object_properties
-            if not response:
-                LOGGER.error(f"unable to set tags")
-            else:
-                LOGGER.info(f"tag(s) set successfully")
+		batches = [properties[i:i + 100] for i in range(0, len(properties), 100)]
+		LOGGER.info(f"splitting {len(properties)} properties in batches of 100")
+		for batch in batches:
+			response = self.auth.client(self.bulk_create_or_update_object_properties(batch)).bulk_create_or_update_object_properties
+			if not response:
+				LOGGER.error(f"unable to set tags")
+			else:
+				LOGGER.info(f"tag(s) set successfully")
 
 
 def main(*args, **kwargs):
