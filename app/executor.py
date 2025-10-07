@@ -167,10 +167,11 @@ class ExecutorArgs(Vertical, can_focus=False, can_focus_children=True):
 		flags = []
 		for i, element in enumerate(elements):
 			if isinstance(element, Label):
-				flag = element._content.split()[-1]
+				print(vars(element))
+				flag = element._Static__content.split()[-1]
 				flags.append(flag)
 				args.append(f"-{flag[0]}")
-				if '★' in element._content:
+				if '★' in element._Static__content:
 					mandatory = True
 			if isinstance(element, Input) or isinstance(element, Select):
 				value = element.value
