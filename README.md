@@ -41,6 +41,18 @@ python -m app
  
 **Note:** The navigation keys will be shown in the footer.
 
+To debug the app, launch a textual console.
+
+```bash
+textual console -x SYSTEM -x EVENT -x DEBUG -x INFO
+```
+
+In a separate window, run a Textual app with textual run --dev to connect it to the textual console.
+```bash
+textual run --dev app.app:MCSDKApp
+```
+![debug](debug.png) 
+
 <p align="right">(<a href="#top">back to top</a>)</p>
 
 ### 2. MC SDK Sample Runner (Wrapper)

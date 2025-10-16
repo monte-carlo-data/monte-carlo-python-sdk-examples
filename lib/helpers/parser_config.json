@@ -26,7 +26,21 @@
 					"help": "Tag in key:value format"
 				}
 			}
-		}
+		},
+        "bulk_domain_importer.py": {
+              "description": "\n\nCreates or updates a domain and its asset assignments. Every time this runs, it will overwrite the assignments.",
+              "arguments": {
+                  "profile": {
+                      "default": "default",
+                      "required": false,
+                      "help": "Specify an MCD profile name. Uses default otherwise."
+                  },
+                  "input_file": {
+                    "required": true,
+                    "help": "Path to CSV file containing the domain/asset mapping. The file must contains2 columns: \nThe first column belongs to the domain name and the second will be the MCON id\n\nExample:\n\nFinance,MCON++123++456++table++transactions\nAnalytics,MCON++123++456++view++sessions"
+                  }
+              }
+          }
 	},
 	"monitors": {
 		"add_remove_monitoring_rules.py": {
