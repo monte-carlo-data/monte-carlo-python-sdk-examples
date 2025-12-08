@@ -341,5 +341,34 @@
 				}
 			}
 		}
+	},
+	"migration": {
+		"workspace_migrator.py": {
+			"description": "\nWorkspace migration utility for managing workspace-level operations.\n\nThis utility provides subcommands for export and import activities.",
+			"subparsers": {
+				"export": {
+					"description": "Run all export activities (domains, tags, etc.).",
+					"help": "Run all export activities.",
+					"arguments": {
+						"profile": {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						}
+					}
+				},
+				"import": {
+					"description": "Run all import activities (domains, tags, etc.).",
+					"help": "Run all import activities.",
+					"arguments": {
+						"profile": {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						}
+					}
+				}
+			}
+		}
 	}
 }

@@ -14,10 +14,10 @@ from lib.helpers.logs import LOGGER
 
 
 class Util(object):
-	"""Base Model for Utilities/Scripts."""
+    """Base Model for Utilities/Scripts."""
 
-	def __init__(self, profile: str = None, config_file: str = None, progress: Progress = None, validate: bool = True):
-		"""Creates an instance of Util.
+    def __init__(self, profile: str = None, config_file: str = None, progress: Progress = None, validate: bool = True):
+        """Creates an instance of Util.
 
 		Args:
 			profile (str): Name of the mc test profile.
@@ -25,74 +25,77 @@ class Util(object):
 			progress (Progress): Progress object used to
 		"""
 
-		if not config_file:
-			config_file = str(Path(__file__).parent.parent) + "/configs/configs.ini"
-		self.configs = None
-		if Path(config_file).is_file():
-			LOGGER.debug(f"reading configuration settings from {config_file}")
-			self.configs = configparser.ConfigParser(allow_no_value=True)
-			try:
-				self.configs.read(config_file)
-			except (UnicodeDecodeError, configparser.MissingSectionHeaderError):
-				self.configs.read_file(io.StringIO(ConfigEncryption('rsa', 'keys').decrypt_file(config_file)))
-		else:
-			LOGGER.error(f"config File '{config_file}' specified does not exist")
-			sys.exit(1)
+        if not config_file:
+            config_file = str(Path(__file__).parent.parent) + "/configs/configs.ini"
+        self.configs = None
+        if Path(config_file).is_file():
+            LOGGER.debug(f"reading configuration settings from {config_file}")
+            self.configs = configparser.ConfigParser(allow_no_value=True)
+            try:
+                self.configs.read(config_file)
+            except (UnicodeDecodeError, configparser.MissingSectionHeaderError):
+                self.configs.read_file(
+                    io.StringIO(
+                        ConfigEncryption("rsa", "keys").decrypt_file(config_file)
+                    )
+                )
 
-		if validate:
-			self.auth = mc_auth.MCAuth(self.configs, profile, progress)
-			self.profile = profile
-			self.OUTPUT_DIR = Path(os.path.abspath(__file__)).parent.parent / "output"
-			self.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-			self.BATCH = int(self.configs['global'].get('BATCH', '1000'))
+            self.auth = mc_auth.MCAuth(self.configs, profile, progress, validate)
+            self.profile = profile
+            self.OUTPUT_DIR = Path(os.path.abspath(__file__)).parent.parent / "output"
+            self.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+            self.BATCH = int(self.configs["global"].get("BATCH", "1000"))
+        else:
+            LOGGER.error(f"config File '{config_file}' specified does not exist")
+            sys.exit(1)
 
-	def get_warehouses(self) -> tuple:
-		"""Returns a list of warehouse uuids"""
+    def get_warehouses(self) -> tuple:
+        """Returns a list of warehouse uuids"""
 
-		query = Query()
-		get_user = query.get_user()
-		get_user.account.__fields__("uuid")
-		get_user.account.warehouses.__fields__("name", "uuid")
-		res = self.auth.client(query).get_user
-		warehouses = [warehouse.uuid for warehouse in res.account.warehouses]
+        query = Query()
+        get_user = query.get_user()
+        get_user.account.__fields__("uuid")
+        get_user.account.warehouses.__fields__("name", "uuid")
+        res = self.auth.client(query).get_user
+        warehouses = [warehouse.uuid for warehouse in res.account.warehouses]
 
-		return warehouses, res
+        return warehouses, res
 
-	def get_domains(self):
+    def get_domains(self):
 
-		query = Query()
-		query.get_all_domains().__fields__("name", "uuid", "description")
+        query = Query()
+        query.get_all_domains().__fields__("name", "uuid", "description", "assignments")
 
-		domains = self.auth.client(query).get_all_domains
+        domains = self.auth.client(query).get_all_domains
 
-		return domains
+        return domains
 
-	def create_domain(self, name: str, assignments: list, description: str, uuid: str):
+    def create_domain(self, name: str, assignments: list, description: str, uuid: str):
 
-		not_none_params = {k: v for k, v in locals().items() if v is not None}
-		if not_none_params.get('self'):
-			del not_none_params['self']
+        not_none_params = {k: v for k, v in locals().items() if v is not None}
+        if not_none_params.get("self"):
+            del not_none_params["self"]
 
-		mutation = Mutation()
-		create_domain = mutation.create_or_update_domain(**not_none_params)
-		create_domain.domain.__fields__("uuid", "name")
+        mutation = Mutation()
+        create_domain = mutation.create_or_update_domain(**not_none_params)
+        create_domain.domain.__fields__("uuid", "name")
 
-		domains = self.auth.client(mutation).create_or_update_domain
+        domains = self.auth.client(mutation).create_or_update_domain
 
-		return domains
+        return domains
 
-	def get_data_products(self, batch_size: Optional[int] = None):
+    def get_data_products(self, batch_size: Optional[int] = None):
 
-		batch_size = self.BATCH if batch_size is None else batch_size
+        batch_size = self.BATCH if batch_size is None else batch_size
 
-		query = Query()
-		get_data_products = query.get_data_products()
-		get_data_products.__fields__("description", "name", "uuid")
-		get_data_products.audiences.__fields__("uuid")
-		get_data_products.assets(first=batch_size).edges.node.__fields__("mcon")
-		get_data_products.assets.page_info.__fields__("has_next_page", end_cursor=True)
+        query = Query()
+        get_data_products = query.get_data_products()
+        get_data_products.__fields__("description", "name", "uuid")
+        get_data_products.audiences.__fields__("uuid")
+        get_data_products.assets(first=batch_size).edges.node.__fields__("mcon")
+        get_data_products.assets.page_info.__fields__("has_next_page", end_cursor=True)
 
-		return query
+        return query
 
 
 class Admin(Util):

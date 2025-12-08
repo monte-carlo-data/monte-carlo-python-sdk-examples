@@ -1,5 +1,6 @@
 import os
 import sys
+
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 import csv
 from tables import *
@@ -12,7 +13,7 @@ logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
 
 class BulkDomainImporter(Tables):
 
-	def __init__(self, profile, config_file: str = None, progress: Progress = None):
+	def __init__(self, profile, config_file: str = None, progress: Progress = None, validate: bool = None):
 		"""Creates an instance of BulkDomainImporter.
 
 		Args:
@@ -20,7 +21,7 @@ class BulkDomainImporter(Tables):
 			config_file (str): Path to the Configuration File.
 			progress(Progress): Progress bar.
 		"""
-		super().__init__(profile, config_file, progress)
+		super().__init__(profile, config_file, progress, validate)
 		self.progress_bar = progress
 
 	@staticmethod
@@ -67,7 +68,9 @@ class BulkDomainImporter(Tables):
 
 		LOGGER.debug(f"Retrieving existing domains")
 		existing_domains = self.get_domains()
-		domain_mapping = {domain.name: {'uuid': domain.uuid, 'desc': domain.description} for domain in existing_domains}
+		domain_mapping = {
+			domain.name: {'uuid': domain.uuid, 'desc': domain.description, 'assignments': domain.assignments} for domain
+			in existing_domains}
 		LOGGER.debug(f"Generating payload for {len(rows)} domain assignments")
 
 		domains_payload = {}
@@ -85,26 +88,30 @@ class BulkDomainImporter(Tables):
 			domain = domain_mapping.get(domain_name, None)
 			domain_uuid = domain.get("uuid") if domain else None
 			domain_description = domain.get("desc") if domain else None
+			existing_assignments = domain_mapping.get(domain_name, {}).get("assignments", [])
+			merged = list(set(payload["assignments"] + existing_assignments))
+			payload["assignments"] = merged
 			LOGGER.info(
 				f"Creating/updating domain '{domain_name}' with {len(payload['assignments'])} assets"
 			)
 
-			response = self.create_domain(payload["name"], payload["assignments"], domain_description, domain_uuid)
-
-			if not response:
-				LOGGER.error(f"Unable to create/update domain {domain_name}")
-			else:
+			try:
+				response = self.create_domain(payload["name"], payload["assignments"], domain_description, domain_uuid)
 				domain = response.domain
 				LOGGER.info(
 					f"Domain '{domain.name}' ({domain.uuid}) processed successfully"
 				)
+			except Exception as e:
+				LOGGER.warning(e)
+				LOGGER.error(f"Unable to create/update domain '{domain_name}'")
+				continue
+			self.progress_bar.update(self.progress_bar.tasks[0].id, advance=50/len(domains_payload.items()))
 
 
 def main(*args, **kwargs):
-
 	# Capture Command Line Arguments
 	parser = sdk_helpers.generate_arg_parser(os.path.basename(os.path.dirname(os.path.abspath(__file__))),
-											 os.path.basename(__file__))
+	                                         os.path.basename(__file__))
 
 	if not args:
 		args = parser.parse_args(*args, **kwargs)
