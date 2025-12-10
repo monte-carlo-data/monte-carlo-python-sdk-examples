@@ -25,7 +25,8 @@ CATEGORIES_MD = """\
 CATEGORIES = [CategoryInfo('Admin', '\nAdmin related operations and utilities.'),
               CategoryInfo('Tables', '\nCollection of actions and utilities around tables/views.'),
               CategoryInfo('Monitors', '\nCollection of actions and utilities for MC monitors.'),
-              CategoryInfo('Lineage', '\nCollection of actions and utilities around lineage.'),]
+              CategoryInfo('Lineage', '\nCollection of actions and utilities around lineage.'),
+              CategoryInfo('Migration', '\nCollection of actions and utilities for workspace migration.')]
 
 
 class Category(Vertical, can_focus=True, can_focus_children=False):

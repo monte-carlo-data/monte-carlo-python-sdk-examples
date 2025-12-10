@@ -18,7 +18,7 @@ from lib.helpers.logs import LOGGER
 
 class MCAuth(object):
 
-    def __init__(self, configs: configparser.ConfigParser, profile: str = None, progress: Progress = None):
+    def __init__(self, configs: configparser.ConfigParser, profile: str = None, progress: Progress = None, validate: bool = False):
 
         self.profile = "default" if not profile else profile
         self.profile_file = os.path.expanduser("~/.mcd/profiles.ini")
@@ -36,7 +36,8 @@ class MCAuth(object):
                     exit(1)
 
                 self.client = Client(session=Session(mcd_id=self.mcd_id_current, mcd_token=self._mcd_token_current))
-                self.validate_cli()
+                if validate:
+                    self.validate_cli()
             else:
                 LOGGER.error(f"profile '{self.profile}' does not exist")
                 exit(1)

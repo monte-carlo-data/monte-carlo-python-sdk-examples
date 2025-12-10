@@ -110,7 +110,6 @@ pycarlo==0.9.15
 pycognito==2024.5.1
 pycparser==2.22
 pycryptodome==3.20.0
-Pygments==2.18.0
 PyJWT==2.8.0
 python-box==7.1.1
 python-daemon==3.1.2

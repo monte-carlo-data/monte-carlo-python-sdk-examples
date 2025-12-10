@@ -61,6 +61,7 @@ class GetMonitorStats(Monitors):
                                                   monitor.next_execution_time, monitor.monitor_run_status,
                                                   f"https://getmontecarlo.com/alerts/{monitor.uuid}"]
 
+
         if len(monitors) > 0:
             LOGGER.info(f"- Retrieving last run status and incidents...")
             for monitor in monitors:
