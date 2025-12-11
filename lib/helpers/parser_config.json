@@ -40,6 +40,20 @@
                     "help": "Path to CSV file containing the domain/asset mapping. The file must contains2 columns: \nThe first column belongs to the domain name and the second will be the MCON id\n\nExample:\n\nFinance,MCON++123++456++table++transactions\nAnalytics,MCON++123++456++view++sessions"
                   }
               }
+          },
+        "bulk_domain_exporter.py": {
+              "description": "\n\nExports all domains and their asset assignments to a CSV file. The output can be used with bulk_domain_importer.py to migrate domains to another workspace.",
+              "arguments": {
+                  "profile": {
+                      "default": "default",
+                      "required": false,
+                      "help": "Specify an MCD profile name. Uses default otherwise."
+                  },
+                  "output_file": {
+                    "required": true,
+                    "help": "Path to output CSV file.\n\nOutput format (no header):\nFinance,MCON++123++456++table++transactions\nAnalytics,MCON++123++456++view++sessions"
+                  }
+              }
           }
 	},
 	"monitors": {

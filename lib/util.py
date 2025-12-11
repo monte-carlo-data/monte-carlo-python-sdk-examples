@@ -97,6 +97,130 @@ class Util(object):
 
         return query
 
+	def get_data_products_list(self):
+		"""Get all data products with basic info.
+
+		Returns:
+			list: List of data product objects with name, uuid, description, is_deleted fields.
+		"""
+		query = Query()
+		get_data_products = query.get_data_products()
+		get_data_products.__fields__("name", "uuid", "description", "is_deleted")
+
+		return self.auth.client(query).get_data_products
+
+	def get_data_product_assets(self, data_product_uuid: str, batch_size: Optional[int] = None) -> list:
+		"""Get all asset MCONs for a data product with pagination.
+
+		Args:
+			data_product_uuid (str): UUID of the data product.
+			batch_size (int): Limit of results returned per request.
+
+		Returns:
+			list: List of asset MCONs.
+		"""
+		batch_size = self.BATCH if batch_size is None else batch_size
+		mcons = []
+		cursor = None
+
+		while True:
+			after_clause = f', after: "{cursor}"' if cursor else ''
+			query = f"""
+			query getDataProductAssets {{
+				getDataProductV2(dataProductId: "{data_product_uuid}") {{
+					uuid
+					assets(first: {batch_size}{after_clause}) {{
+						pageInfo {{
+							hasNextPage
+							endCursor
+						}}
+						edges {{
+							node {{
+								mcon
+							}}
+						}}
+					}}
+				}}
+			}}"""
+
+			response = self.auth.client(query).get_data_product_v2
+
+			if response and response.assets:
+				for edge in response.assets.edges:
+					mcons.append(edge.node.mcon)
+
+				if response.assets.page_info.has_next_page:
+					cursor = response.assets.page_info.end_cursor
+				else:
+					break
+			else:
+				break
+
+		return mcons
+
+	def create_or_update_data_product(self, name: str, description: str = None, uuid: str = None):
+		"""Create or update a data product.
+
+		Args:
+			name (str): Name of the data product.
+			description (str): Description of the data product.
+			uuid (str): UUID of existing data product to update.
+
+		Returns:
+			Response object with data_product containing uuid and name.
+		"""
+		mutation = """
+		mutation createOrUpdateDataProduct($name: String!, $description: String, $uuid: UUID) {
+			createOrUpdateDataProduct(name: $name, description: $description, uuid: $uuid) {
+				dataProduct {
+					uuid
+					name
+				}
+			}
+		}
+		"""
+
+		variables = {"name": name}
+		if description:
+			variables["description"] = description
+		if uuid:
+			variables["uuid"] = uuid
+
+		response = self.auth.client(mutation, variables=variables)
+		return response.create_or_update_data_product
+
+	def set_data_product_assets(self, data_product_id: str, mcons: list):
+		"""Set assets for a data product.
+
+		Args:
+			data_product_id (str): UUID of the data product.
+			mcons (list): List of asset MCONs to assign.
+
+		Returns:
+			Response object or None if mcons is empty.
+		"""
+		if not mcons:
+			return None
+
+		mutation = """
+		mutation setDataProductAssets($dataProductId: UUID!, $mcons: [String!]!) {
+			setDataProductAssets(dataProductId: $dataProductId, mcons: $mcons) {
+				dataProduct {
+					uuid
+					name
+				}
+			}
+		}
+		"""
+
+		variables = {
+			"dataProductId": data_product_id,
+			"mcons": mcons
+		}
+
+		response = self.auth.client(mutation, variables=variables)
+		return response.set_data_product_assets
+
 
 class Admin(Util):
 
@@ -127,6 +251,148 @@ class Admin(Util):
 		update_monitored_table_rule_list.__fields__("id")
 
 		return mutation
+
+	def get_blocklist_entries(self, batch_size: Optional[int] = None) -> list:
+		"""Get all blocklist entries with pagination.
+
+		Args:
+			batch_size (int): Limit of results returned per request.
+
+		Returns:
+			list: List of blocklist entry dictionaries.
+		"""
+		batch_size = self.BATCH if batch_size is None else batch_size
+		entries = []
+		cursor = None
+
+		while True:
+			after_clause = f', after: "{cursor}"' if cursor else ''
+
+			query = f"""
+			query GetCollectionBlockList {{
+				getCollectionBlockList(
+					first: {batch_size}{after_clause}
+				) {{
+					edges {{
+						cursor
+						node {{
+							id
+							matchType
+							project
+							targetObjectType
+							effect
+							dataset
+							resourceId
+						}}
+					}}
+					pageInfo {{
+						hasNextPage
+						endCursor
+					}}
+				}}
+			}}"""
+
+			response = self.auth.client(query).get_collection_block_list
+
+			if response and response.edges:
+				for edge in response.edges:
+					node = edge.node
+					entries.append({
+						'id': node.id,
+						'resource_id': node.resource_id,
+						'target_object_type': node.target_object_type,
+						'match_type': node.match_type,
+						'dataset': node.dataset or '',
+						'project': node.project or '',
+						'effect': node.effect or ''
+					})
+
+				if response.page_info.has_next_page:
+					cursor = response.page_info.end_cursor
+				else:
+					break
+			else:
+				break
+
+		return entries
+
+	def modify_blocklist_entries(self, resource_id: str, target_object_type: str, entries: list):
+		"""Add or modify blocklist entries.
+
+		The API requires:
+		- parentScope: identifies the parent hierarchy (resourceId, and optionally project/dataset)
+		- targetObjectType: the type of objects being blocked (project, dataset, etc.)
+		- collectionBlocks: array of block entries
+
+		Args:
+			resource_id (str): The warehouse/connection UUID.
+			target_object_type (str): Type of objects being blocked (project, dataset, schema, table).
+			entries (list): List of entry dictionaries with match_type, effect, project, dataset.
+
+		Returns:
+			Response object from the mutation.
+		"""
+		mutation = """
+		mutation modifyCollectionBlockList(
+			$collectionBlocks: [ModifyCollectionBlockListInput]!,
+			$parentScope: CollectionBlockListParentScopeInput!,
+			$targetObjectType: CollectionPreferenceTargetObjectType!
+		) {
+			modifyCollectionBlockList(
+				collectionBlocks: $collectionBlocks,
+				parentScope: $parentScope,
+				targetObjectType: $targetObjectType
+			) {
+				id
+				resourceId
+				targetObjectType
+				matchType
+				effect
+			}
+		}
+		"""
+
+		# Build the collection blocks array and determine parent scope
+		collection_blocks = []
+		parent_scope = {"resourceId": resource_id}
+
+		for entry in entries:
+			block_input = {
+				"resourceId": resource_id,
+				"matchType": entry['match_type'],
+				"effect": entry.get('effect') or 'block'
+			}
+
+			# Always include project and dataset in block_input if available
+			if entry.get('project'):
+				block_input["project"] = entry['project']
+			if entry.get('dataset'):
+				block_input["dataset"] = entry['dataset']
+
+			# Build parentScope based on targetObjectType
+			if target_object_type == 'dataset' and entry.get('project'):
+				parent_scope["project"] = entry['project']
+			elif target_object_type == 'schema':
+				if entry.get('project'):
+					parent_scope["project"] = entry['project']
+				if entry.get('dataset'):
+					parent_scope["dataset"] = entry['dataset']
+			elif target_object_type == 'table':
+				if entry.get('project'):
+					parent_scope["project"] = entry['project']
+				if entry.get('dataset'):
+					parent_scope["dataset"] = entry['dataset']
+
+			collection_blocks.append(block_input)
+
+		variables = {
+			"collectionBlocks": collection_blocks,
+			"parentScope": parent_scope,
+			"targetObjectType": target_object_type
+		}
+
+		response = self.auth.client(mutation, variables=variables)
+		return response.modify_collection_block_list
 
 
 class Tables(Util):
