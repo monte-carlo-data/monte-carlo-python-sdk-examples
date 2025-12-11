@@ -1,99 +1,90 @@
 # Instructions:
-# 1. Run this script: python admin/bulk_data_product_exporter.py
-# 2. Input your API Key ID and Token (generated in Settings -> API within MC UI)
-# 3. Input the name of the CSV file you would like to create
+# 1. Run this script: python admin/bulk_data_product_exporter.py -p <profile> -o <output_file>
+# 2. Profile should be configured in ~/.mcd/profiles.ini
 #
 # Output CSV format:
 #   data_product_name,data_product_description,asset_mcon
 #   Customer Analytics,Analytics for customer data,MCON++123++456++table++customers
 #   Revenue Dashboard,Revenue KPIs,MCON++123++456++view++orders
 #
-# Note: The output CSV can be used with a bulk_data_product_importer.py to migrate data products to another workspace.
+# Note: The output CSV can be used with bulk_data_product_importer.py to migrate data products to another workspace.
 
-from pycarlo.core import Client, Query, Session
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 import csv
+from admin import *
+from lib.helpers import sdk_helpers
+
+# Initialize logger
+util_name = os.path.basename(__file__).split('.')[0]
+logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
 
 
-def get_data_products(client):
-    """Get all data products with basic info."""
-    query = Query()
-    get_data_products = query.get_data_products()
-    get_data_products.__fields__("name", "uuid", "description", "is_deleted")
-    return client(query).get_data_products
+class BulkDataProductExporter(Admin):
+
+	def __init__(self, profile, config_file: str = None, progress: Progress = None):
+		"""Creates an instance of BulkDataProductExporter.
+
+		Args:
+			profile(str): Profile to use stored in montecarlo cli.
+			config_file (str): Path to the Configuration File.
+			progress(Progress): Progress bar.
+		"""
+		super().__init__(profile, config_file, progress)
+		self.progress_bar = progress
+
+	def export_data_products(self, output_file: str):
+		"""Export all data products and their assets to CSV.
+
+		Args:
+			output_file (str): Path to output CSV file.
+		"""
+		LOGGER.info("Fetching data products...")
+		data_products = self.get_data_products_list()
+		active_dps = [dp for dp in data_products if not dp.is_deleted]
+		LOGGER.info(f"Found {len(active_dps)} active data products")
+
+		rows_to_write = []
+
+		for dp in active_dps:
+			assets = self.get_data_product_assets(dp.uuid)
+			LOGGER.info(f"  - {dp.name}: {len(assets)} assets")
+
+			if assets:
+				for mcon in assets:
+					rows_to_write.append([dp.name, dp.description or '', mcon])
+			else:
+				rows_to_write.append([dp.name, dp.description or '', ''])
+
+		with open(output_file, 'w', newline='') as csvfile:
+			writer = csv.writer(csvfile)
+			writer.writerow(['data_product_name', 'data_product_description', 'asset_mcon'])
+			for row in rows_to_write:
+				writer.writerow(row)
+
+		LOGGER.info(f"Export complete: {output_file} ({len(rows_to_write)} rows)")
 
 
-def get_data_product_assets(client, data_product_uuid, batch_size=1000):
-    """Get all asset MCONs for a data product with pagination using getDataProductV2."""
-    mcons = []
-    cursor = None
-    
-    while True:
-        after_clause = f', after: "{cursor}"' if cursor else ''
-        query = f"""
-        query getDataProductAssets {{
-            getDataProductV2(dataProductId: "{data_product_uuid}") {{
-                uuid
-                assets(first: {batch_size}{after_clause}) {{
-                    pageInfo {{
-                        hasNextPage
-                        endCursor
-                    }}
-                    edges {{
-                        node {{
-                            mcon
-                        }}
-                    }}
-                }}
-            }}
-        }}"""
-        
-        response = client(query).get_data_product_v2
-        
-        if response and response.assets:
-            for edge in response.assets.edges:
-                mcons.append(edge.node.mcon)
-            
-            if response.assets.page_info.has_next_page:
-                cursor = response.assets.page_info.end_cursor
-            else:
-                break
-        else:
-            break
-    
-    return mcons
+def main(*args, **kwargs):
+
+	# Capture Command Line Arguments
+	parser = sdk_helpers.generate_arg_parser(os.path.basename(os.path.dirname(os.path.abspath(__file__))),
+											 os.path.basename(__file__))
+
+	if not args:
+		args = parser.parse_args(*args, **kwargs)
+	else:
+		sdk_helpers.dump_help(parser, main, *args)
+
+	@sdk_helpers.ensure_progress
+	def run_utility(progress, util, args):
+		util.progress_bar = progress
+		util.export_data_products(args.output_file)
+
+	util = BulkDataProductExporter(args.profile)
+	run_utility(util, args)
 
 
-def export_data_products(client, output_file):
-    """Export all data products and their assets to CSV."""
-    data_products = get_data_products(client)
-    active_dps = [dp for dp in data_products if not dp.is_deleted]
-    print(f"Found {len(active_dps)} active data products")
-    
-    rows_to_write = []
-    
-    for dp in active_dps:
-        assets = get_data_product_assets(client, dp.uuid)
-        print(f"  - {dp.name}: {len(assets)} assets")
-        
-        if assets:
-            for mcon in assets:
-                rows_to_write.append([dp.name, dp.description or '', mcon])
-        else:
-            rows_to_write.append([dp.name, dp.description or '', ''])
-    
-    with open(output_file, 'w', newline='') as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(['data_product_name', 'data_product_description', 'asset_mcon'])
-        for row in rows_to_write:
-            writer.writerow(row)
-    
-    print(f"Export complete: {output_file} ({len(rows_to_write)} rows)")
-
-
-if __name__ == '__main__':
-    mcd_id = input("MCD ID: ")
-    mcd_token = input("MCD Token: ")
-    output_file = input("Output CSV filename: ")
-    
-    client = Client(session=Session(mcd_id=mcd_id, mcd_token=mcd_token))
-    export_data_products(client, output_file)
+if __name__ == "__main__":
+	main()

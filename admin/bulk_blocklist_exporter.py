@@ -1,110 +1,88 @@
 # Instructions:
-# 1. Run this script: python admin/bulk_blocklist_exporter.py
-# 2. Input your API Key ID and Token (generated in Settings -> API within MC UI)
-# 3. Input the name of the CSV file you would like to create
+# 1. Run this script: python admin/bulk_blocklist_exporter.py -p <profile> -o <output_file>
+# 2. Profile should be configured in ~/.mcd/profiles.ini
 #
 # Output CSV format:
 #   resource_id,target_object_type,match_type,dataset,project,effect
 #   abc123-uuid,TABLE,EXACT,my_dataset,my_project,BLOCK
 #
-# Note: The output CSV can be used with a bulk_blocklist_importer.py to migrate blocklist entries to another workspace.
+# Note: The output CSV can be used with bulk_blocklist_importer.py to migrate blocklist entries to another workspace.
 
-from pycarlo.core import Client, Session
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 import csv
+from admin import *
+from lib.helpers import sdk_helpers
+
+# Initialize logger
+util_name = os.path.basename(__file__).split('.')[0]
+logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
 
 
-def get_blocklist_entries(client, batch_size=500):
-    """Get all blocklist entries with pagination."""
-    entries = []
-    cursor = None
-    
-    while True:
-        after_clause = f', after: "{cursor}"' if cursor else ''
-        
-        query = f"""
-        query GetCollectionBlockList {{
-            getCollectionBlockList(
-                first: {batch_size}{after_clause}
-            ) {{
-                edges {{
-                    cursor
-                    node {{
-                        id
-                        matchType
-                        project
-                        targetObjectType
-                        effect
-                        dataset
-                        resourceId
-                    }}
-                }}
-                pageInfo {{
-                    hasNextPage
-                    endCursor
-                }}
-            }}
-        }}"""
-        
-        response = client(query).get_collection_block_list
-        
-        if response and response.edges:
-            for edge in response.edges:
-                node = edge.node
-                entries.append({
-                    'id': node.id,
-                    'resource_id': node.resource_id,
-                    'target_object_type': node.target_object_type,
-                    'match_type': node.match_type,
-                    'dataset': node.dataset or '',
-                    'project': node.project or '',
-                    'effect': node.effect or ''
-                })
-            
-            if response.page_info.has_next_page:
-                cursor = response.page_info.end_cursor
-            else:
-                break
-        else:
-            break
-    
-    return entries
+class BulkBlocklistExporter(Admin):
+
+	def __init__(self, profile, config_file: str = None, progress: Progress = None):
+		"""Creates an instance of BulkBlocklistExporter.
+
+		Args:
+			profile(str): Profile to use stored in montecarlo cli.
+			config_file (str): Path to the Configuration File.
+			progress(Progress): Progress bar.
+		"""
+		super().__init__(profile, config_file, progress)
+		self.progress_bar = progress
+
+	def export_blocklist(self, output_file: str):
+		"""Export all blocklist entries to CSV.
+
+		Args:
+			output_file (str): Path to output CSV file.
+		"""
+		LOGGER.info("Fetching blocklist entries...")
+		entries = self.get_blocklist_entries()
+		LOGGER.info(f"Found {len(entries)} blocklist entries")
+
+		if not entries:
+			LOGGER.info("No blocklist entries found.")
+			return
+
+		with open(output_file, 'w', newline='') as csvfile:
+			writer = csv.writer(csvfile)
+			writer.writerow(['resource_id', 'target_object_type', 'match_type', 'dataset', 'project', 'effect'])
+
+			for entry in entries:
+				writer.writerow([
+					entry['resource_id'],
+					entry['target_object_type'],
+					entry['match_type'],
+					entry['dataset'],
+					entry['project'],
+					entry['effect']
+				])
+
+		LOGGER.info(f"Export complete: {output_file} ({len(entries)} rows)")
 
 
-def export_blocklist(client, output_file):
-    """Export all blocklist entries to CSV."""
-    print("Fetching blocklist entries...")
-    entries = get_blocklist_entries(client)
-    print(f"Found {len(entries)} blocklist entries")
-    
-    if not entries:
-        print("No blocklist entries found.")
-        return
-    
-    with open(output_file, 'w', newline='') as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(['resource_id', 'target_object_type', 'match_type', 'dataset', 'project', 'effect'])
-        
-        for entry in entries:
-            writer.writerow([
-                entry['resource_id'],
-                entry['target_object_type'],
-                entry['match_type'],
-                entry['dataset'],
-                entry['project'],
-                entry['effect']
-            ])
-    
-    print(f"Export complete: {output_file} ({len(entries)} rows)")
+def main(*args, **kwargs):
+
+	# Capture Command Line Arguments
+	parser = sdk_helpers.generate_arg_parser(os.path.basename(os.path.dirname(os.path.abspath(__file__))),
+											 os.path.basename(__file__))
+
+	if not args:
+		args = parser.parse_args(*args, **kwargs)
+	else:
+		sdk_helpers.dump_help(parser, main, *args)
+
+	@sdk_helpers.ensure_progress
+	def run_utility(progress, util, args):
+		util.progress_bar = progress
+		util.export_blocklist(args.output_file)
+
+	util = BulkBlocklistExporter(args.profile)
+	run_utility(util, args)
 
 
-if __name__ == '__main__':
-    mcd_id = input("MCD ID: ")
-    mcd_token = input("MCD Token: ")
-    output_file = input("Output CSV filename: ")
-    
-    if not output_file:
-        print("Output CSV filename is required.")
-    else:
-        client = Client(session=Session(mcd_id=mcd_id, mcd_token=mcd_token))
-        export_blocklist(client, output_file)
-
+if __name__ == "__main__":
+	main()

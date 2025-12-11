@@ -54,6 +54,62 @@
                     "help": "Path to output CSV file.\n\nOutput format (no header):\nFinance,MCON++123++456++table++transactions\nAnalytics,MCON++123++456++view++sessions"
                   }
               }
+          },
+        "bulk_data_product_exporter.py": {
+              "description": "\n\nExports all data products and their asset assignments to a CSV file. The output can be used with bulk_data_product_importer.py to migrate data products to another workspace.",
+              "arguments": {
+                  "profile": {
+                      "default": "default",
+                      "required": false,
+                      "help": "Specify an MCD profile name. Uses default otherwise."
+                  },
+                  "output_file": {
+                    "required": true,
+                    "help": "Path to output CSV file.\n\nOutput format (with header):\ndata_product_name,data_product_description,asset_mcon\nCustomer Analytics,Analytics for customer data,MCON++123++456++table++customers"
+                  }
+              }
+          },
+        "bulk_data_product_importer.py": {
+              "description": "\n\nImports data products from a CSV file (exported from bulk_data_product_exporter.py). Creates or updates data products and assigns assets.",
+              "arguments": {
+                  "profile": {
+                      "default": "default",
+                      "required": false,
+                      "help": "Specify an MCD profile name. Uses default otherwise."
+                  },
+                  "input_file": {
+                    "required": true,
+                    "help": "Path to CSV file from bulk_data_product_exporter.py.\n\nExpected format (with header):\ndata_product_name,data_product_description,asset_mcon\nCustomer Analytics,Analytics for customer data,MCON++123++456++table++customers"
+                  }
+              }
+          },
+        "bulk_blocklist_exporter.py": {
+              "description": "\n\nExports all blocklist entries to a CSV file. The output can be used with bulk_blocklist_importer.py to migrate blocklist entries to another workspace.",
+              "arguments": {
+                  "profile": {
+                      "default": "default",
+                      "required": false,
+                      "help": "Specify an MCD profile name. Uses default otherwise."
+                  },
+                  "output_file": {
+                    "required": true,
+                    "help": "Path to output CSV file.\n\nOutput format (with header):\nresource_id,target_object_type,match_type,dataset,project,effect"
+                  }
+              }
+          },
+        "bulk_blocklist_importer.py": {
+              "description": "\n\nImports blocklist entries from a CSV file (exported from bulk_blocklist_exporter.py). Skips entries that already exist.",
+              "arguments": {
+                  "profile": {
+                      "default": "default",
+                      "required": false,
+                      "help": "Specify an MCD profile name. Uses default otherwise."
+                  },
+                  "input_file": {
+                    "required": true,
+                    "help": "Path to CSV file from bulk_blocklist_exporter.py.\n\nExpected format (with header):\nresource_id,target_object_type,match_type,dataset,project,effect"
+                  }
+              }
           }
 	},
 	"monitors": {
