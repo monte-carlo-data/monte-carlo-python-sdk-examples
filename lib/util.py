@@ -97,129 +97,129 @@ class Util(object):
 
         return query
 
-	def get_data_products_list(self):
-		"""Get all data products with basic info.
+    def get_data_products_list(self):
+        """Get all data products with basic info.
 
-		Returns:
-			list: List of data product objects with name, uuid, description, is_deleted fields.
-		"""
-		query = Query()
-		get_data_products = query.get_data_products()
-		get_data_products.__fields__("name", "uuid", "description", "is_deleted")
+        Returns:
+            list: List of data product objects with name, uuid, description, is_deleted fields.
+        """
+        query = Query()
+        get_data_products = query.get_data_products()
+        get_data_products.__fields__("name", "uuid", "description", "is_deleted")
 
-		return self.auth.client(query).get_data_products
+        return self.auth.client(query).get_data_products
 
-	def get_data_product_assets(self, data_product_uuid: str, batch_size: Optional[int] = None) -> list:
-		"""Get all asset MCONs for a data product with pagination.
+    def get_data_product_assets(self, data_product_uuid: str, batch_size: Optional[int] = None) -> list:
+        """Get all asset MCONs for a data product with pagination.
 
-		Args:
-			data_product_uuid (str): UUID of the data product.
-			batch_size (int): Limit of results returned per request.
+        Args:
+            data_product_uuid (str): UUID of the data product.
+            batch_size (int): Limit of results returned per request.
 
-		Returns:
-			list: List of asset MCONs.
-		"""
-		batch_size = self.BATCH if batch_size is None else batch_size
-		mcons = []
-		cursor = None
+        Returns:
+            list: List of asset MCONs.
+        """
+        batch_size = self.BATCH if batch_size is None else batch_size
+        mcons = []
+        cursor = None
 
-		while True:
-			after_clause = f', after: "{cursor}"' if cursor else ''
-			query = f"""
-			query getDataProductAssets {{
-				getDataProductV2(dataProductId: "{data_product_uuid}") {{
-					uuid
-					assets(first: {batch_size}{after_clause}) {{
-						pageInfo {{
-							hasNextPage
-							endCursor
-						}}
-						edges {{
-							node {{
-								mcon
-							}}
-						}}
-					}}
-				}}
-			}}"""
+        while True:
+            after_clause = f', after: "{cursor}"' if cursor else ''
+            query = f"""
+            query getDataProductAssets {{
+                getDataProductV2(dataProductId: "{data_product_uuid}") {{
+                    uuid
+                    assets(first: {batch_size}{after_clause}) {{
+                        pageInfo {{
+                            hasNextPage
+                            endCursor
+                        }}
+                        edges {{
+                            node {{
+                                mcon
+                            }}
+                        }}
+                    }}
+                }}
+            }}"""
 
-			response = self.auth.client(query).get_data_product_v2
+            response = self.auth.client(query).get_data_product_v2
 
-			if response and response.assets:
-				for edge in response.assets.edges:
-					mcons.append(edge.node.mcon)
+            if response and response.assets:
+                for edge in response.assets.edges:
+                    mcons.append(edge.node.mcon)
 
-				if response.assets.page_info.has_next_page:
-					cursor = response.assets.page_info.end_cursor
-				else:
-					break
-			else:
-				break
+                if response.assets.page_info.has_next_page:
+                    cursor = response.assets.page_info.end_cursor
+                else:
+                    break
+            else:
+                break
 
-		return mcons
+        return mcons
 
-	def create_or_update_data_product(self, name: str, description: str = None, uuid: str = None):
-		"""Create or update a data product.
+    def create_or_update_data_product(self, name: str, description: str = None, uuid: str = None):
+        """Create or update a data product.
 
-		Args:
-			name (str): Name of the data product.
-			description (str): Description of the data product.
-			uuid (str): UUID of existing data product to update.
+        Args:
+            name (str): Name of the data product.
+            description (str): Description of the data product.
+            uuid (str): UUID of existing data product to update.
 
-		Returns:
-			Response object with data_product containing uuid and name.
-		"""
-		mutation = """
-		mutation createOrUpdateDataProduct($name: String!, $description: String, $uuid: UUID) {
-			createOrUpdateDataProduct(name: $name, description: $description, uuid: $uuid) {
-				dataProduct {
-					uuid
-					name
-				}
-			}
-		}
-		"""
+        Returns:
+            Response object with data_product containing uuid and name.
+        """
+        mutation = """
+        mutation createOrUpdateDataProduct($name: String!, $description: String, $uuid: UUID) {
+            createOrUpdateDataProduct(name: $name, description: $description, uuid: $uuid) {
+                dataProduct {
+                    uuid
+                    name
+                }
+            }
+        }
+        """
 
-		variables = {"name": name}
-		if description:
-			variables["description"] = description
-		if uuid:
-			variables["uuid"] = uuid
+        variables = {"name": name}
+        if description:
+            variables["description"] = description
+        if uuid:
+            variables["uuid"] = uuid
 
-		response = self.auth.client(mutation, variables=variables)
-		return response.create_or_update_data_product
+        response = self.auth.client(mutation, variables=variables)
+        return response.create_or_update_data_product
 
-	def set_data_product_assets(self, data_product_id: str, mcons: list):
-		"""Set assets for a data product.
+    def set_data_product_assets(self, data_product_id: str, mcons: list):
+        """Set assets for a data product.
 
-		Args:
-			data_product_id (str): UUID of the data product.
-			mcons (list): List of asset MCONs to assign.
+        Args:
+            data_product_id (str): UUID of the data product.
+            mcons (list): List of asset MCONs to assign.
 
-		Returns:
-			Response object or None if mcons is empty.
-		"""
-		if not mcons:
-			return None
+        Returns:
+            Response object or None if mcons is empty.
+        """
+        if not mcons:
+            return None
 
-		mutation = """
-		mutation setDataProductAssets($dataProductId: UUID!, $mcons: [String!]!) {
-			setDataProductAssets(dataProductId: $dataProductId, mcons: $mcons) {
-				dataProduct {
-					uuid
-					name
-				}
-			}
-		}
-		"""
+        mutation = """
+        mutation setDataProductAssets($dataProductId: UUID!, $mcons: [String!]!) {
+            setDataProductAssets(dataProductId: $dataProductId, mcons: $mcons) {
+                dataProduct {
+                    uuid
+                    name
+                }
+            }
+        }
+        """
 
-		variables = {
-			"dataProductId": data_product_id,
-			"mcons": mcons
-		}
+        variables = {
+            "dataProductId": data_product_id,
+            "mcons": mcons
+        }
 
-		response = self.auth.client(mutation, variables=variables)
-		return response.set_data_product_assets
+        response = self.auth.client(mutation, variables=variables)
+        return response.set_data_product_assets
 
 
 class Admin(Util):

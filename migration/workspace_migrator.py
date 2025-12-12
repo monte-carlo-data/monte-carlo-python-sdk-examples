@@ -132,13 +132,30 @@ class WorkspaceMigrator(Util):
 
 		return valid
 
-	def run_export(self, entities: list = None):
+	def _set_migrator_directory(self, directory: str):
+		"""Set the output/input directory for all migrators.
+
+		Args:
+			directory (str): Directory path to use.
+		"""
+		if directory:
+			LOGGER.info(f"Using directory: {directory}")
+			for entity, migrator in self.migrators.items():
+				if migrator is not None:
+					migrator.output_dir = directory
+
+	def run_export(self, entities: list = None, output_dir: str = None):
 		"""Run export for specified entities.
 
 		Args:
 			entities (list): List of entity types to export. Exports all if None.
+			output_dir (str): Directory to write export files. Uses default if None.
 		"""
 		self._ensure_workspace_migrator_log_handler()
+
+		# Set output directory if provided
+		if output_dir:
+			self._set_migrator_directory(output_dir)
 
 		entities = entities or AVAILABLE_ENTITIES
 		LOGGER.info(f"Starting export for: {', '.join(entities)}")
@@ -183,14 +200,19 @@ class WorkspaceMigrator(Util):
 		LOGGER.info("Export complete!")
 		self._log_summary(results)
 
-	def run_import(self, entities: list = None, dry_run: bool = True):
+	def run_import(self, entities: list = None, input_dir: str = None, dry_run: bool = True):
 		"""Run import for specified entities.
 
 		Args:
 			entities (list): List of entity types to import. Imports all if None.
+			input_dir (str): Directory containing import files. Uses default if None.
 			dry_run (bool): If True, preview changes without committing.
 		"""
 		self._ensure_workspace_migrator_log_handler()
+
+		# Set input directory if provided
+		if input_dir:
+			self._set_migrator_directory(input_dir)
 
 		entities = entities or AVAILABLE_ENTITIES
 		mode = "DRY-RUN" if dry_run else "COMMIT"
@@ -243,13 +265,18 @@ class WorkspaceMigrator(Util):
 			LOGGER.info("")
 			LOGGER.info("This was a DRY-RUN. To commit changes, run with --force yes")
 
-	def run_validate(self, entities: list = None):
+	def run_validate(self, entities: list = None, input_dir: str = None):
 		"""Validate migration files for specified entities.
 
 		Args:
 			entities (list): List of entity types to validate. Validates all if None.
+			input_dir (str): Directory containing files to validate. Uses default if None.
 		"""
 		self._ensure_workspace_migrator_log_handler()
+
+		# Set input directory if provided
+		if input_dir:
+			self._set_migrator_directory(input_dir)
 
 		entities = entities or AVAILABLE_ENTITIES
 		LOGGER.info(f"Validating files for: {', '.join(entities)}")
@@ -322,7 +349,17 @@ class WorkspaceMigrator(Util):
 		if operation != 'export':
 			return
 
-		manifest_path = Path(__file__).parent / "migration-data-exports" / "migration_manifest.json"
+		# Get output directory from first available migrator
+		output_dir = None
+		for migrator in self.migrators.values():
+			if migrator is not None:
+				output_dir = migrator.output_dir
+				break
+
+		if output_dir is None:
+			output_dir = Path(__file__).parent / "migration-data-exports"
+
+		manifest_path = Path(output_dir) / "migration_manifest.json"
 		manifest_path.parent.mkdir(parents=True, exist_ok=True)
 
 		manifest = {
@@ -371,16 +408,18 @@ def main(*args, **kwargs):
 		command = args.commands.lower()
 
 		if command == 'export':
-			util.run_export(entities)
+			output_dir = getattr(args, 'output_dir', None)
+			util.run_export(entities, output_dir=output_dir)
 
 		elif command == 'import':
-			# Check for force flag
+			input_dir = getattr(args, 'input_dir', None)
 			force = getattr(args, 'force', None)
 			dry_run = force != 'yes'
-			util.run_import(entities, dry_run=dry_run)
+			util.run_import(entities, input_dir=input_dir, dry_run=dry_run)
 
 		elif command == 'validate':
-			util.run_validate(entities)
+			input_dir = getattr(args, 'input_dir', None)
+			util.run_validate(entities, input_dir=input_dir)
 
 	util = WorkspaceMigrator(args.profile)
 	run_utility(util, args)
