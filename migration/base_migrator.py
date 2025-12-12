@@ -27,8 +27,8 @@ class BaseMigrator(ABC):
 	- validate(): Validate import file before importing
 	"""
 
-	# Default output directory for exports
-	DEFAULT_OUTPUT_DIR = Path(__file__).parent.parent / "export-data"
+	# Default output directory for exports (within migration folder)
+	DEFAULT_OUTPUT_DIR = Path(__file__).parent / "migration-data-exports"
 
 	def __init__(self, profile: str, config_file: str = None, progress: Progress = None):
 		"""Initialize the migrator.
@@ -82,6 +82,10 @@ class BaseMigrator(ABC):
 		"""
 		filename = filename or self.output_filename
 		return self.output_dir / filename
+
+	def ensure_output_dir(self):
+		"""Ensure the output directory exists, creating it if necessary."""
+		self.output_dir.mkdir(parents=True, exist_ok=True)
 
 	@abstractmethod
 	def export(self, output_file: str = None) -> dict:
