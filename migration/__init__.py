@@ -18,10 +18,10 @@ from pycarlo.core import Query, Mutation
 from rich.progress import Progress
 from rich import print
 
-# Migrator classes will be imported here as they are created
+# Migrator classes
 from migration.base_migrator import BaseMigrator
 from migration.blocklist_migrator import BlocklistMigrator
 from migration.domain_migrator import DomainMigrator
 from migration.data_product_migrator import DataProductMigrator
-# from migration.monitor_migrator import MonitorMigrator
+# MonitorMigrator will be added in a future phase
 

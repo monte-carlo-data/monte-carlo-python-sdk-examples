@@ -414,27 +414,58 @@
 	},
 	"migration": {
 		"workspace_migrator.py": {
-			"description": "\nWorkspace migration utility for managing workspace-level operations.\n\nThis utility provides subcommands for export and import activities.",
+			"description": "\nWorkspace migration utility for Monte Carlo configurations.\n\nExport, import, and validate domains, data products, and blocklists between environments.\n\nExamples:\n\t# Export all entities\n\tpython migration/workspace_migrator.py export --profile source_env\n\n\t# Export specific entities\n\tpython migration/workspace_migrator.py export --profile source_env --entities domains,blocklists\n\n\t# Import (dry-run by default)\n\tpython migration/workspace_migrator.py import --profile target_env\n\n\t# Import with force (commit changes)\n\tpython migration/workspace_migrator.py import --profile target_env --force yes\n\n\t# Validate migration files\n\tpython migration/workspace_migrator.py validate --profile target_env",
 			"subparsers": {
 				"export": {
-					"description": "Run all export activities (domains, tags, etc.).",
-					"help": "Run all export activities.",
+					"description": "Export domains, data products, and blocklists to CSV files.",
+					"help": "Export MC configurations to files.",
 					"arguments": {
 						"profile": {
 							"default": "default",
 							"required": false,
 							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"entities": {
+							"required": false,
+							"default": "all",
+							"help": "Comma-separated list of entities: blocklists,domains,tags,exclusion_windows,data_products (or 'all')"
 						}
 					}
 				},
 				"import": {
-					"description": "Run all import activities (domains, tags, etc.).",
-					"help": "Run all import activities.",
+					"description": "Import domains, data products, and blocklists from CSV files. Dry-run by default.",
+					"help": "Import MC configurations from files.",
 					"arguments": {
 						"profile": {
 							"default": "default",
 							"required": false,
 							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"entities": {
+							"required": false,
+							"default": "all",
+							"help": "Comma-separated list of entities: blocklists,domains,tags,exclusion_windows,data_products (or 'all')"
+						},
+						"force": {
+							"required": false,
+							"choices": ["yes", "no"],
+							"help": "Set to 'yes' to commit changes. Default is dry-run (preview only)."
+						}
+					}
+				},
+				"validate": {
+					"description": "Validate migration CSV files before importing.",
+					"help": "Validate migration files.",
+					"arguments": {
+						"profile": {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"entities": {
+							"required": false,
+							"default": "all",
+							"help": "Comma-separated list of entities: blocklists,domains,tags,exclusion_windows,data_products (or 'all')"
 						}
 					}
 				}
