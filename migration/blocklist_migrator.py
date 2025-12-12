@@ -146,8 +146,8 @@ class BlocklistMigrator(BaseMigrator, Admin):
 			progress_per_group = 50 / max(total_groups, 1)
 
 			for (resource_id, target_object_type), entries in entries_by_resource_and_type.items():
-				# Filter out duplicates
-				entries_to_process = []
+				# Filter out duplicates and identify new entries
+				new_entries = []
 				for entry in entries:
 					entry_key = self._make_entry_key(entry)
 
@@ -155,33 +155,53 @@ class BlocklistMigrator(BaseMigrator, Admin):
 						LOGGER.debug(f"[{self.entity_name}] SKIP (exists): {entry.get('project') or entry.get('dataset')}")
 						skipped += 1
 					else:
-						entries_to_process.append(entry)
+						new_entries.append(entry)
 
-				if not entries_to_process:
+				if not new_entries:
 					self.update_progress(progress_per_group)
 					continue
 
-				# Log what would be created
-				for entry in entries_to_process:
-					identifier = entry.get('project') or entry.get('dataset') or resource_id
-					if dry_run:
-						LOGGER.info(f"[{self.entity_name}] WOULD CREATE: {identifier} ({target_object_type})")
-						created += 1
-					else:
-						# Actually create the entry
+				# Group new entries by scope (the API replaces all entries within a scope)
+				# For datasets, scope is (resource_id, project)
+				# For projects, scope is just (resource_id)
+				entries_by_scope = self._group_entries_by_scope(new_entries, target_object_type)
+
+				for scope_key, scope_new_entries in entries_by_scope.items():
+					# Get existing entries for this scope to include in the API call
+					scope_existing = self._get_existing_entries_for_scope(
+						existing_entries, resource_id, target_object_type, scope_key
+					)
+
+					# Combine existing + new entries for this scope
+					all_scope_entries = scope_existing + scope_new_entries
+
+					# Log what would be created
+					for entry in scope_new_entries:
+						identifier = entry.get('project') or entry.get('dataset') or resource_id
+						if dry_run:
+							LOGGER.info(f"[{self.entity_name}] WOULD CREATE: {identifier} ({target_object_type})")
+							created += 1
+						else:
+							pass  # Will be created in batch below
+
+					if not dry_run:
+						# Make a single API call with all entries for this scope
 						try:
 							self.modify_blocklist_entries(
 								resource_id=resource_id,
 								target_object_type=target_object_type,
-								entries=[entry]
+								entries=all_scope_entries
 							)
-							LOGGER.info(f"[{self.entity_name}] CREATED: {identifier} ({target_object_type})")
-							created += 1
-							# Add to existing keys to prevent duplicates in same run
-							existing_keys.add(self._make_entry_key(entry))
+							for entry in scope_new_entries:
+								identifier = entry.get('project') or entry.get('dataset') or resource_id
+								LOGGER.info(f"[{self.entity_name}] CREATED: {identifier} ({target_object_type})")
+								created += 1
+								existing_keys.add(self._make_entry_key(entry))
 						except Exception as e:
-							LOGGER.error(f"[{self.entity_name}] FAILED: {identifier} - {e}")
-							failed += 1
+							for entry in scope_new_entries:
+								identifier = entry.get('project') or entry.get('dataset') or resource_id
+								LOGGER.error(f"[{self.entity_name}] FAILED: {identifier} - {e}")
+								failed += 1
 
 				self.update_progress(progress_per_group)
 
@@ -342,4 +362,70 @@ class BlocklistMigrator(BaseMigrator, Admin):
 			entry.get('dataset') or '',
 			entry.get('project') or ''
 		)
+
+	def _group_entries_by_scope(self, entries: list, target_object_type: str) -> dict:
+		"""Group entries by their API scope.
+
+		The MC API replaces all entries within a scope, so we need to group
+		entries that share the same scope and make one API call per scope.
+
+		For datasets: scope is (project,)
+		For projects: scope is ()  - all projects share the same scope
+		For schemas/tables: scope is (project, dataset)
+
+		Args:
+			entries (list): List of entries to group.
+			target_object_type (str): The type of blocklist entries.
+
+		Returns:
+			dict: Entries grouped by scope key.
+		"""
+		grouped = defaultdict(list)
+
+		for entry in entries:
+			if target_object_type == 'dataset':
+				scope_key = (entry.get('project') or '',)
+			elif target_object_type == 'project':
+				scope_key = ()  # All projects share the same scope
+			else:  # schema, table
+				scope_key = (entry.get('project') or '', entry.get('dataset') or '')
+
+			grouped[scope_key].append(entry)
+
+		return grouped
+
+	def _get_existing_entries_for_scope(self, existing_entries: list, resource_id: str,
+										target_object_type: str, scope_key: tuple) -> list:
+		"""Get existing entries that match a given scope.
+
+		Args:
+			existing_entries (list): All existing blocklist entries.
+			resource_id (str): The warehouse/connection UUID.
+			target_object_type (str): The type of blocklist entries.
+			scope_key (tuple): The scope key from _group_entries_by_scope.
+
+		Returns:
+			list: Existing entries for this scope.
+		"""
+		matching = []
+
+		for entry in existing_entries:
+			# Must match resource_id and target_object_type
+			if entry['resource_id'] != resource_id:
+				continue
+			if entry['target_object_type'] != target_object_type:
+				continue
+
+			# Check scope match
+			if target_object_type == 'dataset':
+				entry_scope = (entry.get('project') or '',)
+			elif target_object_type == 'project':
+				entry_scope = ()
+			else:  # schema, table
+				entry_scope = (entry.get('project') or '', entry.get('dataset') or '')
+
+			if entry_scope == scope_key:
+				matching.append(entry)
+
+		return matching
 
