@@ -2,6 +2,10 @@
 Domain Migrator - Export and import domains between MC environments.
 
 Domains are logical groupings of tables that help organize assets in Monte Carlo.
+
+This migrator uses composition to delegate core operations to admin bulk scripts,
+avoiding code duplication while adding migration-specific features like dry-run
+support and structured results.
 """
 
 import os
@@ -11,15 +15,17 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 import csv
 from pathlib import Path
 from rich.progress import Progress
-from lib.util import Tables
 from lib.helpers.logs import LOGGER
 from migration.base_migrator import BaseMigrator
+from admin.bulk_domain_exporter import BulkDomainExporter
+from admin.bulk_domain_importerv2 import BulkDomainImporterV2
 
 
-class DomainMigrator(BaseMigrator, Tables):
+class DomainMigrator(BaseMigrator):
 	"""Migrator for domains.
 
 	Handles export and import of domains and their table assignments.
+	Delegates core operations to admin bulk scripts.
 
 	CSV Format:
 		domain_name,domain_description,asset_mcon
@@ -33,10 +39,12 @@ class DomainMigrator(BaseMigrator, Tables):
 			config_file (str): Path to configuration file (optional)
 			progress (Progress): Rich progress bar instance (optional)
 		"""
-		# Initialize Tables (which initializes Util for auth/config)
-		Tables.__init__(self, profile, config_file, progress)
 		# Initialize BaseMigrator
 		BaseMigrator.__init__(self, profile, config_file, progress)
+
+		# Composition: use admin classes for core operations
+		self._exporter = BulkDomainExporter(profile, config_file, progress)
+		self._importer = BulkDomainImporterV2(profile, config_file, progress)
 
 	@property
 	def entity_name(self) -> str:
@@ -64,42 +72,39 @@ class DomainMigrator(BaseMigrator, Tables):
 			# Get output path
 			output_path = Path(output_file) if output_file else self.get_output_path()
 
-			# Fetch domains
+			# Delegate to admin exporter to fetch domain data
 			LOGGER.info(f"[{self.entity_name}] Fetching domains...")
-			domains = self.get_domains()
-			LOGGER.info(f"[{self.entity_name}] Found {len(domains)} domains")
+			domains_data = self._exporter.get_all_domains_with_assets()
+			LOGGER.info(f"[{self.entity_name}] Found {len(domains_data)} domains")
 
-			if not domains:
+			if not domains_data:
 				LOGGER.info(f"[{self.entity_name}] No domains to export")
 				return self.create_result(success=True, count=0, file=str(output_path))
 
-			# Write to CSV
+			# Write to CSV in migration format (with header)
 			rows_written = 0
 			with open(output_path, 'w', newline='') as csvfile:
 				writer = csv.writer(csvfile)
 				writer.writerow(['domain_name', 'domain_description', 'asset_mcon'])
 
-				progress_per_domain = 50 / max(len(domains), 1)
+				progress_per_domain = 50 / max(len(domains_data), 1)
 
-				for domain in domains:
-					LOGGER.info(f"[{self.entity_name}] Processing: {domain.name}")
+				for domain in domains_data:
+					LOGGER.info(f"[{self.entity_name}] Processing: {domain['name']}")
 
-					# Get assets for this domain
-					assets = self._get_domain_assets(domain.uuid)
-
-					if assets:
-						for mcon in assets:
+					if domain['assets']:
+						for mcon in domain['assets']:
 							writer.writerow([
-								domain.name,
-								domain.description or '',
+								domain['name'],
+								domain['description'],
 								mcon
 							])
 							rows_written += 1
 					else:
 						# Include domains with no assets
 						writer.writerow([
-							domain.name,
-							domain.description or '',
+							domain['name'],
+							domain['description'],
 							''
 						])
 						rows_written += 1
@@ -108,7 +113,7 @@ class DomainMigrator(BaseMigrator, Tables):
 
 			result = self.create_result(
 				success=True,
-				count=len(domains),
+				count=len(domains_data),
 				rows=rows_written,
 				file=str(output_path)
 			)
@@ -146,22 +151,23 @@ class DomainMigrator(BaseMigrator, Tables):
 					errors=validation['errors']
 				)
 
-			# Parse input file and group by domain
-			domains_data = self._parse_input_file(input_path)
+			# Delegate parsing to admin importer
+			parse_result = self._importer.parse_domain_csv(str(input_path))
+			if not parse_result['success']:
+				return self.create_result(
+					success=False,
+					dry_run=dry_run,
+					created=0, updated=0, skipped=0, failed=0,
+					errors=parse_result['errors']
+				)
+
+			domains_data = parse_result['domains']
 			LOGGER.info(f"[{self.entity_name}] Found {len(domains_data)} domains in file")
 
-			# Get existing domains
+			# Delegate getting existing domains to admin importer
 			LOGGER.info(f"[{self.entity_name}] Fetching existing domains...")
-			existing_domains = self.get_domains()
-			domain_mapping = {
-				domain.name: {
-					'uuid': domain.uuid,
-					'description': domain.description,
-					'assignments': domain.assignments or []
-				}
-				for domain in existing_domains
-			}
-			LOGGER.info(f"[{self.entity_name}] Found {len(domain_mapping)} existing domains")
+			existing_domains = self._importer.get_existing_domains_map()
+			LOGGER.info(f"[{self.entity_name}] Found {len(existing_domains)} existing domains")
 
 			# Process domains
 			created = 0
@@ -171,7 +177,7 @@ class DomainMigrator(BaseMigrator, Tables):
 			progress_per_domain = 50 / max(len(domains_data), 1)
 
 			for domain_name, data in domains_data.items():
-				existing = domain_mapping.get(domain_name)
+				existing = existing_domains.get(domain_name)
 
 				if existing:
 					# Merge assignments (don't replace)
@@ -186,6 +192,9 @@ class DomainMigrator(BaseMigrator, Tables):
 				# Filter out empty MCONs
 				merged_assignments = [m for m in merged_assignments if m]
 
+				# Determine description (from file, or existing)
+				description = data['description'] or (existing['description'] if existing else None)
+
 				if dry_run:
 					LOGGER.info(f"[{self.entity_name}] WOULD {action}: {domain_name} with {len(merged_assignments)} assets")
 					if is_new:
@@ -193,23 +202,24 @@ class DomainMigrator(BaseMigrator, Tables):
 					else:
 						updated += 1
 				else:
-					try:
-						response = self.create_domain(
-							name=domain_name,
-							assignments=merged_assignments,
-							description=data['description'] or (existing['description'] if existing else None),
-							uuid=existing['uuid'] if existing else None
-						)
-						domain = response.domain
-						LOGGER.info(f"[{self.entity_name}] {action}D: {domain.name} ({domain.uuid})")
+					# Delegate actual import to admin importer
+					result = self._importer.import_single_domain(
+						name=domain_name,
+						mcons=merged_assignments,
+						description=description,
+						uuid=existing['uuid'] if existing else None,
+						merge_assignments=False,  # We already merged above
+						existing_assignments=None
+					)
 
+					if result['success']:
+						LOGGER.info(f"[{self.entity_name}] {action}D: {domain_name} ({result['domain_uuid']})")
 						if is_new:
 							created += 1
 						else:
 							updated += 1
-
-					except Exception as e:
-						LOGGER.error(f"[{self.entity_name}] FAILED: {domain_name} - {e}")
+					else:
+						LOGGER.error(f"[{self.entity_name}] FAILED: {domain_name} - {result['error']}")
 						failed += 1
 
 				self.update_progress(progress_per_domain)
@@ -237,6 +247,8 @@ class DomainMigrator(BaseMigrator, Tables):
 	def validate(self, input_file: str = None) -> dict:
 		"""Validate a domain CSV file.
 
+		Uses the admin importer's parsing to validate the file structure.
+
 		Args:
 			input_file (str): Path to input file. Uses default if not provided.
 
@@ -256,41 +268,14 @@ class DomainMigrator(BaseMigrator, Tables):
 				errors.append(f"File not found: {input_path}")
 				return self.create_result(valid=False, count=0, errors=errors, warnings=warnings)
 
-			# Parse and validate CSV
-			domain_count = 0
-			domain_names = set()
+			# Delegate parsing to admin importer for validation
+			parse_result = self._importer.parse_domain_csv(str(input_path))
 
-			with open(input_path, 'r') as csvfile:
-				reader = csv.reader(csvfile)
+			if not parse_result['success']:
+				errors.extend(parse_result['errors'])
+				return self.create_result(valid=False, count=0, errors=errors, warnings=warnings)
 
-				# Check for header row
-				first_row = next(reader, None)
-				if first_row is None:
-					errors.append("CSV file is empty")
-					return self.create_result(valid=False, count=0, errors=errors, warnings=warnings)
-
-				# Determine if first row is header
-				has_header = first_row[0].lower() == 'domain_name'
-				if not has_header:
-					# First row is data, process it
-					if len(first_row) < 2:
-						errors.append("Row 1: Expected at least 2 columns (domain_name, asset_mcon)")
-					else:
-						domain_names.add(first_row[0].strip())
-
-				# Validate remaining rows
-				for row_num, row in enumerate(reader, start=2 if has_header else 2):
-					if len(row) < 2:
-						errors.append(f"Row {row_num}: Expected at least 2 columns")
-						continue
-
-					domain_name = row[0].strip()
-					if not domain_name:
-						errors.append(f"Row {row_num}: Missing domain_name")
-					else:
-						domain_names.add(domain_name)
-
-			domain_count = len(domain_names)
+			domain_count = parse_result['count']
 
 			if domain_count == 0:
 				warnings.append("File contains no valid domains")
@@ -307,99 +292,3 @@ class DomainMigrator(BaseMigrator, Tables):
 		except Exception as e:
 			errors.append(f"Validation error: {e}")
 			return self.create_result(valid=False, count=0, errors=errors, warnings=warnings)
-
-	def _get_domain_assets(self, domain_uuid: str) -> list:
-		"""Get all asset MCONs for a domain.
-
-		Args:
-			domain_uuid (str): UUID of the domain.
-
-		Returns:
-			list: List of asset MCONs.
-		"""
-		mcons = []
-		cursor = None
-
-		while True:
-			response = self.auth.client(
-				self.get_tables(domain_id=domain_uuid, after=cursor)
-			).get_tables
-
-			for table in response.edges:
-				mcons.append(table.node.mcon)
-
-			if response.page_info.has_next_page:
-				cursor = response.page_info.end_cursor
-			else:
-				break
-
-		return mcons
-
-	def _parse_input_file(self, input_path: Path) -> dict:
-		"""Parse the input CSV file and group by domain.
-
-		Args:
-			input_path (Path): Path to input CSV file.
-
-		Returns:
-			dict: Domains grouped by name with description and mcons.
-		"""
-		domains_data = {}
-
-		with open(input_path, 'r') as csvfile:
-			reader = csv.reader(csvfile)
-
-			# Check for header row
-			first_row = next(reader, None)
-			if first_row is None:
-				return domains_data
-
-			# Determine if first row is header
-			has_header = first_row[0].lower() == 'domain_name'
-
-			# Process first row if it's data
-			if not has_header:
-				self._process_domain_row(first_row, domains_data)
-
-			# Process remaining rows
-			for row in reader:
-				self._process_domain_row(row, domains_data)
-
-		return domains_data
-
-	def _process_domain_row(self, row: list, domains_data: dict):
-		"""Process a single CSV row and add to domains_data.
-
-		Args:
-			row (list): CSV row.
-			domains_data (dict): Dictionary to update.
-		"""
-		if len(row) < 2:
-			return
-
-		domain_name = row[0].strip()
-		if not domain_name:
-			return
-
-		# Handle both 2-column (name, mcon) and 3-column (name, desc, mcon) formats
-		if len(row) >= 3:
-			description = row[1].strip() if row[1] else None
-			mcon = row[2].strip() if row[2] else None
-		else:
-			description = None
-			mcon = row[1].strip() if row[1] else None
-
-		if domain_name not in domains_data:
-			domains_data[domain_name] = {
-				'description': description,
-				'mcons': []
-			}
-
-		# Update description if we have one and didn't before
-		if description and not domains_data[domain_name]['description']:
-			domains_data[domain_name]['description'] = description
-
-		# Add MCON if present
-		if mcon:
-			domains_data[domain_name]['mcons'].append(mcon)
-

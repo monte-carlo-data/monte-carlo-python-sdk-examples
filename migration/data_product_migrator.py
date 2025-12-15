@@ -3,6 +3,10 @@ Data Product Migrator - Export and import data products between MC environments.
 
 Data Products are business-facing data assets that group related tables for
 stakeholders to monitor and understand data quality.
+
+This migrator uses composition to delegate operations to admin scripts:
+- BulkDataProductExporter: Fetches data product data from MC
+- BulkDataProductImporter: Parses CSV and imports individual data products
 """
 
 import os
@@ -12,15 +16,17 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 import csv
 from pathlib import Path
 from rich.progress import Progress
-from lib.util import Util
 from lib.helpers.logs import LOGGER
 from migration.base_migrator import BaseMigrator
+from admin.bulk_data_product_exporter import BulkDataProductExporter
+from admin.bulk_data_product_importer import BulkDataProductImporter
 
 
-class DataProductMigrator(BaseMigrator, Util):
+class DataProductMigrator(BaseMigrator):
 	"""Migrator for data products.
 
 	Handles export and import of data products and their asset assignments.
+	Uses composition to delegate to admin scripts for core operations.
 
 	CSV Format:
 		data_product_name,data_product_description,asset_mcon
@@ -34,10 +40,12 @@ class DataProductMigrator(BaseMigrator, Util):
 			config_file (str): Path to configuration file (optional)
 			progress (Progress): Rich progress bar instance (optional)
 		"""
-		# Initialize Util for auth/config
-		Util.__init__(self, profile, config_file, progress)
 		# Initialize BaseMigrator
 		BaseMigrator.__init__(self, profile, config_file, progress)
+
+		# Initialize admin tools via composition
+		self._exporter = BulkDataProductExporter(profile, config_file, progress)
+		self._importer = BulkDataProductImporter(profile, config_file, progress)
 
 	@property
 	def entity_name(self) -> str:
@@ -49,6 +57,9 @@ class DataProductMigrator(BaseMigrator, Util):
 
 	def export(self, output_file: str = None) -> dict:
 		"""Export all data products and their assets to CSV.
+
+		Delegates to BulkDataProductExporter for fetching data product data,
+		then formats and writes to migration CSV.
 
 		Args:
 			output_file (str): Path to output file. Uses default if not provided.
@@ -65,13 +76,12 @@ class DataProductMigrator(BaseMigrator, Util):
 			# Get output path
 			output_path = Path(output_file) if output_file else self.get_output_path()
 
-			# Fetch data products
-			LOGGER.info(f"[{self.entity_name}] Fetching data products...")
-			data_products = self.get_data_products_list()
-			active_dps = [dp for dp in data_products if not dp.is_deleted]
-			LOGGER.info(f"[{self.entity_name}] Found {len(active_dps)} active data products")
+			# Fetch data products using admin exporter
+			LOGGER.info(f"[{self.entity_name}] Fetching data products via admin exporter...")
+			data_products_data = self._exporter.get_all_data_products_with_assets()
+			LOGGER.info(f"[{self.entity_name}] Found {len(data_products_data)} active data products")
 
-			if not active_dps:
+			if not data_products_data:
 				LOGGER.info(f"[{self.entity_name}] No data products to export")
 				# Still write header
 				with open(output_path, 'w', newline='') as csvfile:
@@ -85,37 +95,30 @@ class DataProductMigrator(BaseMigrator, Util):
 				writer = csv.writer(csvfile)
 				writer.writerow(['data_product_name', 'data_product_description', 'asset_mcon'])
 
-				progress_per_dp = 50 / max(len(active_dps), 1)
+				progress_per_dp = 50 / max(len(data_products_data), 1)
 
-				for dp in active_dps:
-					LOGGER.info(f"[{self.entity_name}] Processing: {dp.name}")
+				for dp_data in data_products_data:
+					name = dp_data['name']
+					description = dp_data.get('description', '')
+					assets = dp_data.get('assets', [])
 
-					# Get assets for this data product
-					assets = self.get_data_product_assets(dp.uuid)
+					LOGGER.info(f"[{self.entity_name}] Processing: {name}")
 					LOGGER.debug(f"[{self.entity_name}]   - {len(assets)} assets")
 
 					if assets:
 						for mcon in assets:
-							writer.writerow([
-								dp.name,
-								dp.description or '',
-								mcon
-							])
+							writer.writerow([name, description, mcon])
 							rows_written += 1
 					else:
 						# Include data products with no assets
-						writer.writerow([
-							dp.name,
-							dp.description or '',
-							''
-						])
+						writer.writerow([name, description, ''])
 						rows_written += 1
 
 					self.update_progress(progress_per_dp)
 
 			result = self.create_result(
 				success=True,
-				count=len(active_dps),
+				count=len(data_products_data),
 				rows=rows_written,
 				file=str(output_path)
 			)
@@ -128,6 +131,9 @@ class DataProductMigrator(BaseMigrator, Util):
 
 	def import_data(self, input_file: str = None, dry_run: bool = True) -> dict:
 		"""Import data products from CSV.
+
+		Delegates to BulkDataProductImporter for parsing CSV and importing
+		individual data products. Handles dry-run mode and validation.
 
 		Args:
 			input_file (str): Path to input file. Uses default if not provided.
@@ -153,18 +159,24 @@ class DataProductMigrator(BaseMigrator, Util):
 					errors=validation['errors']
 				)
 
-			# Parse input file and group by data product
-			data_products_data = self._parse_input_file(input_path)
+			# Parse input file using admin importer
+			LOGGER.info(f"[{self.entity_name}] Parsing CSV via admin importer...")
+			parse_result = self._importer.parse_data_product_csv(str(input_path))
+
+			if parse_result['errors']:
+				return self.create_result(
+					success=False,
+					dry_run=dry_run,
+					created=0, updated=0, skipped=0, failed=0,
+					errors=parse_result['errors']
+				)
+
+			data_products_data = parse_result['data_products']
 			LOGGER.info(f"[{self.entity_name}] Found {len(data_products_data)} data products in file")
 
-			# Get existing data products
+			# Get existing data products using admin importer
 			LOGGER.info(f"[{self.entity_name}] Fetching existing data products...")
-			existing_dps = self.get_data_products_list()
-			dp_mapping = {
-				dp.name: dp.uuid
-				for dp in existing_dps
-				if not dp.is_deleted
-			}
+			dp_mapping = self._importer.get_existing_data_products_map()
 			LOGGER.info(f"[{self.entity_name}] Found {len(dp_mapping)} existing data products")
 
 			# Process data products
@@ -189,37 +201,25 @@ class DataProductMigrator(BaseMigrator, Util):
 					else:
 						updated += 1
 				else:
-					try:
-						# Step 1: Create or update the data product
-						response = self.create_or_update_data_product(
-							name=dp_name,
-							description=data['description'] or None,
-							uuid=existing_uuid
-						)
+					# Use admin importer for actual import
+					result = self._importer.import_single_data_product(
+						name=dp_name,
+						description=data['description'],
+						mcons=mcons,
+						existing_uuid=existing_uuid
+					)
 
-						if response and response.data_product:
-							dp = response.data_product
-							LOGGER.info(f"[{self.entity_name}] {action}D: {dp.name} ({dp.uuid})")
-
-							# Step 2: Set assets for the data product
-							if mcons:
-								try:
-									self.set_data_product_assets(dp.uuid, mcons)
-									LOGGER.info(f"[{self.entity_name}]   Assigned {len(mcons)} assets")
-								except Exception as e:
-									LOGGER.warning(f"[{self.entity_name}]   Failed to assign assets: {e}")
-
-							if is_new:
-								created += 1
-								dp_mapping[dp_name] = dp.uuid
-							else:
-								updated += 1
+					if result['success']:
+						if result['action'] == 'created':
+							created += 1
+							# Update mapping for subsequent operations
+							if result.get('uuid'):
+								dp_mapping[dp_name] = result['uuid']
 						else:
-							LOGGER.error(f"[{self.entity_name}] FAILED: {dp_name} - no response")
-							failed += 1
-
-					except Exception as e:
-						LOGGER.error(f"[{self.entity_name}] FAILED: {dp_name} - {e}")
+							updated += 1
+						LOGGER.info(f"[{self.entity_name}] {result['action'].upper()}: {dp_name}")
+					else:
+						LOGGER.error(f"[{self.entity_name}] FAILED: {dp_name} - {result.get('error', 'Unknown error')}")
 						failed += 1
 
 				self.update_progress(progress_per_dp)
@@ -247,6 +247,8 @@ class DataProductMigrator(BaseMigrator, Util):
 	def validate(self, input_file: str = None) -> dict:
 		"""Validate a data product CSV file.
 
+		Uses the admin importer's parse method for consistency with import.
+
 		Args:
 			input_file (str): Path to input file. Uses default if not provided.
 
@@ -266,34 +268,14 @@ class DataProductMigrator(BaseMigrator, Util):
 				errors.append(f"File not found: {input_path}")
 				return self.create_result(valid=False, count=0, errors=errors, warnings=warnings)
 
-			# Parse and validate CSV
-			dp_count = 0
-			dp_names = set()
-			required_columns = {'data_product_name'}
+			# Parse using admin importer for consistent validation
+			parse_result = self._importer.parse_data_product_csv(str(input_path))
 
-			with open(input_path, 'r') as csvfile:
-				reader = csv.DictReader(csvfile)
+			if parse_result['errors']:
+				errors.extend(parse_result['errors'])
+				return self.create_result(valid=False, count=0, errors=errors, warnings=warnings)
 
-				# Check headers
-				if reader.fieldnames is None:
-					errors.append("CSV file is empty or has no headers")
-					return self.create_result(valid=False, count=0, errors=errors, warnings=warnings)
-
-				missing_columns = required_columns - set(reader.fieldnames)
-				if missing_columns:
-					errors.append(f"Missing required columns: {missing_columns}")
-					return self.create_result(valid=False, count=0, errors=errors, warnings=warnings)
-
-				# Validate each row
-				for row_num, row in enumerate(reader, start=2):
-					dp_name = row.get('data_product_name', '').strip()
-
-					if not dp_name:
-						errors.append(f"Row {row_num}: Missing data_product_name")
-					else:
-						dp_names.add(dp_name)
-
-			dp_count = len(dp_names)
+			dp_count = len(parse_result['data_products'])
 
 			if dp_count == 0:
 				warnings.append("File contains no valid data products")
@@ -310,42 +292,4 @@ class DataProductMigrator(BaseMigrator, Util):
 		except Exception as e:
 			errors.append(f"Validation error: {e}")
 			return self.create_result(valid=False, count=0, errors=errors, warnings=warnings)
-
-	def _parse_input_file(self, input_path: Path) -> dict:
-		"""Parse the input CSV file and group by data product.
-
-		Args:
-			input_path (Path): Path to input CSV file.
-
-		Returns:
-			dict: Data products grouped by name with description and mcons.
-		"""
-		data_products = {}
-
-		with open(input_path, 'r') as csvfile:
-			reader = csv.DictReader(csvfile)
-
-			for row in reader:
-				name = row['data_product_name'].strip()
-				if not name:
-					continue
-
-				desc = row.get('data_product_description', '').strip()
-				mcon = row.get('asset_mcon', '').strip()
-
-				if name not in data_products:
-					data_products[name] = {
-						'description': desc or None,
-						'mcons': []
-					}
-
-				# Update description if we have one and didn't before
-				if desc and not data_products[name]['description']:
-					data_products[name]['description'] = desc
-
-				# Add MCON if present
-				if mcon:
-					data_products[name]['mcons'].append(mcon)
-
-		return data_products
 
