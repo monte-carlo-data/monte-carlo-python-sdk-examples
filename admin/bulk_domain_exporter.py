@@ -60,29 +60,55 @@ class BulkDomainExporter(Tables):
 
 		return mcons
 
+	def get_all_domains_with_assets(self) -> list:
+		"""Fetch all domains with their assets.
+
+		Returns structured data that can be used by other tools (like the migration module)
+		without requiring file I/O.
+
+		Returns:
+			list[dict]: List of dictionaries with keys:
+				- name (str): Domain name
+				- description (str): Domain description
+				- uuid (str): Domain UUID
+				- assets (list): List of asset MCONs
+		"""
+		LOGGER.info("Fetching domains...")
+		domains = self.get_domains()
+		LOGGER.info(f"Found {len(domains)} domains")
+
+		results = []
+		for domain in domains:
+			LOGGER.info(f"Processing: {domain.name}")
+			assets = self.get_domain_assets(domain.uuid)
+			results.append({
+				'name': domain.name,
+				'description': domain.description or '',
+				'uuid': domain.uuid,
+				'assets': assets
+			})
+
+		return results
+
 	def export_domains(self, output_file: str):
 		"""Export all domains and their assets to CSV.
 
 		Args:
 			output_file (str): Path to output CSV file.
 		"""
-		LOGGER.info("Fetching domains...")
-		domains = self.get_domains()
-		LOGGER.info(f"Found {len(domains)} domains")
+		# Use the shared method to fetch data
+		domains_data = self.get_all_domains_with_assets()
 
 		with open(output_file, 'w', newline='') as csvfile:
 			writer = csv.writer(csvfile)
 
-			for domain in domains:
-				LOGGER.info(f"Processing: {domain.name}")
-				assets = self.get_domain_assets(domain.uuid)
-
-				if assets:
-					for mcon in assets:
-						writer.writerow([domain.name, mcon])
+			for domain in domains_data:
+				if domain['assets']:
+					for mcon in domain['assets']:
+						writer.writerow([domain['name'], mcon])
 				else:
 					# Include empty domains
-					writer.writerow([domain.name, ''])
+					writer.writerow([domain['name'], ''])
 
 		LOGGER.info(f"Export complete: {output_file}")
 

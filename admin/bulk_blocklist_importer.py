@@ -40,9 +40,161 @@ class BulkBlocklistImporter(Admin):
 		super().__init__(profile, config_file, progress)
 		self.progress_bar = progress
 
+	def parse_blocklist_csv(self, input_file: str) -> dict:
+		"""Parse a blocklist CSV file and return organized data.
+
+		This method returns data instead of calling sys.exit(), making it
+		suitable for use by other modules like the migration tool.
+
+		Args:
+			input_file (str): Path to CSV file.
+
+		Returns:
+			dict: Result with keys:
+				- success (bool): Whether parsing succeeded
+				- entries_by_resource_and_type (dict): Grouped entries
+				- total_count (int): Total number of entries
+				- errors (list): Any errors encountered
+		"""
+		file_path = Path(input_file)
+		errors = []
+		entries_by_resource_and_type = defaultdict(list)
+
+		if not file_path.is_file():
+			return {
+				'success': False,
+				'entries_by_resource_and_type': {},
+				'total_count': 0,
+				'errors': [f"File not found: {input_file}"]
+			}
+
+		try:
+			with open(input_file, 'r') as csvfile:
+				reader = csv.DictReader(csvfile)
+
+				# Check for required columns
+				if reader.fieldnames is None:
+					return {
+						'success': False,
+						'entries_by_resource_and_type': {},
+						'total_count': 0,
+						'errors': ["CSV file is empty or has no headers"]
+					}
+
+				required = {'resource_id', 'target_object_type', 'match_type'}
+				missing = required - set(reader.fieldnames)
+				if missing:
+					return {
+						'success': False,
+						'entries_by_resource_and_type': {},
+						'total_count': 0,
+						'errors': [f"Missing required columns: {missing}"]
+					}
+
+				for row in reader:
+					entry = {
+						'resource_id': row['resource_id'].strip(),
+						'target_object_type': row['target_object_type'].strip(),
+						'match_type': row['match_type'].strip(),
+						'dataset': row.get('dataset', '').strip() or None,
+						'project': row.get('project', '').strip() or None,
+						'effect': row.get('effect', '').strip() or None
+					}
+					key = (entry['resource_id'], entry['target_object_type'])
+					entries_by_resource_and_type[key].append(entry)
+
+		except Exception as e:
+			errors.append(f"Error reading file: {str(e)}")
+
+		total_count = sum(len(entries) for entries in entries_by_resource_and_type.values())
+
+		if total_count == 0 and not errors:
+			errors.append("No entries found in input file")
+
+		return {
+			'success': len(errors) == 0 and total_count > 0,
+			'entries_by_resource_and_type': dict(entries_by_resource_and_type),
+			'total_count': total_count,
+			'errors': errors
+		}
+
+	def get_existing_blocklist_keys(self) -> set:
+		"""Get a set of keys for existing blocklist entries.
+
+		Used for duplicate detection when importing.
+
+		Returns:
+			set: Set of tuples (resource_id, target_object_type, match_type, dataset, project)
+		"""
+		LOGGER.info("Fetching existing blocklist entries...")
+		existing_entries = self.get_blocklist_entries()
+		LOGGER.info(f"Found {len(existing_entries)} existing blocklist entries")
+
+		existing_keys = set()
+		for entry in existing_entries:
+			key = (
+				entry['resource_id'],
+				entry['target_object_type'],
+				entry['match_type'],
+				entry['dataset'] or '',
+				entry['project'] or ''
+			)
+			existing_keys.add(key)
+
+		return existing_keys
+
+	def import_blocklist_batch(self, resource_id: str, target_object_type: str,
+							   entries: list) -> dict:
+		"""Import a batch of blocklist entries for one resource/type combination.
+
+		This method handles one batch at a time, returning a result dict.
+		This allows callers (like the migration tool) to implement dry-run
+		mode or custom error handling.
+
+		Args:
+			resource_id (str): Warehouse/connection UUID.
+			target_object_type (str): Type of object (project, dataset, etc.)
+			entries (list): List of entry dicts to import.
+
+		Returns:
+			dict: Result with keys:
+				- success (bool): Whether import succeeded
+				- created (int): Number of entries created
+				- error (str): Error message if failed
+		"""
+		try:
+			response = self.modify_blocklist_entries(
+				resource_id=resource_id,
+				target_object_type=target_object_type,
+				entries=entries
+			)
+
+			if response:
+				return {
+					'success': True,
+					'created': len(entries),
+					'error': None
+				}
+			else:
+				return {
+					'success': False,
+					'created': 0,
+					'error': "No response from API"
+				}
+
+		except Exception as e:
+			return {
+				'success': False,
+				'created': 0,
+				'error': str(e)
+			}
+
 	@staticmethod
 	def validate_input_file(input_file: str):
 		"""Validate input CSV file and return grouped entries.
+
+		DEPRECATED: Use parse_blocklist_csv() instead for better error handling.
+		This method is kept for backward compatibility.
 
 		Args:
 			input_file (str): Path to input CSV file.
