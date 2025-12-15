@@ -124,24 +124,13 @@ class Util(object):
         cursor = None
 
         while True:
-            after_clause = f', after: "{cursor}"' if cursor else ''
-            query = f"""
-            query getDataProductAssets {{
-                getDataProductV2(dataProductId: "{data_product_uuid}") {{
-                    uuid
-                    assets(first: {batch_size}{after_clause}) {{
-                        pageInfo {{
-                            hasNextPage
-                            endCursor
-                        }}
-                        edges {{
-                            node {{
-                                mcon
-                            }}
-                        }}
-                    }}
-                }}
-            }}"""
+            # Build query using SDK
+            query = Query()
+            get_data_product = query.get_data_product_v2(data_product_id=data_product_uuid)
+            get_data_product.__fields__("uuid")
+            get_data_product.assets(first=batch_size, **(dict(after=cursor) if cursor else {}))
+            get_data_product.assets.edges.node.__fields__("mcon")
+            get_data_product.assets.page_info.__fields__("has_next_page", end_cursor=True)
 
             response = self.auth.client(query).get_data_product_v2
 
@@ -158,39 +147,42 @@ class Util(object):
 
         return mcons
 
-    def create_or_update_data_product(self, name: str, description: str = None, uuid: str = None):
-        """Create or update a data product.
+    def create_or_update_data_product(self, name: str, description: str = None, uuid: str = None, mcons: list = None):
+        """Create or update a data product with optional asset assignment.
+
+        Uses the V2 API which supports assigning assets in a single call.
 
         Args:
             name (str): Name of the data product.
             description (str): Description of the data product.
             uuid (str): UUID of existing data product to update.
+            mcons (list): List of asset MCONs to assign to the data product.
 
         Returns:
             Response object with data_product containing uuid and name.
         """
-        mutation = """
-        mutation createOrUpdateDataProduct($name: String!, $description: String, $uuid: UUID) {
-            createOrUpdateDataProduct(name: $name, description: $description, uuid: $uuid) {
-                dataProduct {
-                    uuid
-                    name
-                }
-            }
-        }
-        """
-
-        variables = {"name": name}
+        # Build parameters - only include non-None values
+        params = {"name": name}
         if description:
-            variables["description"] = description
+            params["description"] = description
         if uuid:
-            variables["uuid"] = uuid
+            params["uuid"] = uuid
+        if mcons:
+            params["mcons"] = mcons
 
-        response = self.auth.client(mutation, variables=variables)
-        return response.create_or_update_data_product
+        # Build mutation using SDK
+        mutation = Mutation()
+        create_or_update = mutation.create_or_update_data_product_v2(**params)
+        create_or_update.data_product.__fields__("uuid", "name")
+
+        response = self.auth.client(mutation)
+        return response.create_or_update_data_product_v2
 
     def set_data_product_assets(self, data_product_id: str, mcons: list):
         """Set assets for a data product.
+
+        Note: This method uses createOrUpdateDataProductV2 internally since
+        the setDataProductAssets mutation has been deprecated.
 
         Args:
             data_product_id (str): UUID of the data product.
@@ -202,24 +194,23 @@ class Util(object):
         if not mcons:
             return None
 
-        mutation = """
-        mutation setDataProductAssets($dataProductId: UUID!, $mcons: [String!]!) {
-            setDataProductAssets(dataProductId: $dataProductId, mcons: $mcons) {
-                dataProduct {
-                    uuid
-                    name
-                }
-            }
-        }
-        """
+        # Get the data product name (required for the V2 mutation) using SDK
+        query = Query()
+        get_data_product = query.get_data_product_v2(data_product_id=data_product_id)
+        get_data_product.__fields__("name", "description")
+        
+        dp_response = self.auth.client(query).get_data_product_v2
+        
+        if not dp_response:
+            return None
 
-        variables = {
-            "dataProductId": data_product_id,
-            "mcons": mcons
-        }
-
-        response = self.auth.client(mutation, variables=variables)
-        return response.set_data_product_assets
+        # Use the V2 mutation which accepts mcons directly
+        return self.create_or_update_data_product(
+            name=dp_response.name,
+            description=dp_response.description,
+            uuid=data_product_id,
+            mcons=mcons
+        )
 
 
 class Admin(Util):
@@ -266,31 +257,18 @@ class Admin(Util):
 		cursor = None
 
 		while True:
-			after_clause = f', after: "{cursor}"' if cursor else ''
-
-			query = f"""
-			query GetCollectionBlockList {{
-				getCollectionBlockList(
-					first: {batch_size}{after_clause}
-				) {{
-					edges {{
-						cursor
-						node {{
-							id
-							matchType
-							project
-							targetObjectType
-							effect
-							dataset
-							resourceId
-						}}
-					}}
-					pageInfo {{
-						hasNextPage
-						endCursor
-					}}
-				}}
-			}}"""
+			# Build query using SDK
+			query = Query()
+			get_blocklist = query.get_collection_block_list(
+				first=batch_size,
+				**(dict(after=cursor) if cursor else {})
+			)
+			get_blocklist.edges.cursor()
+			get_blocklist.edges.node.__fields__(
+				"id", "match_type", "project", "target_object_type",
+				"effect", "dataset", "resource_id"
+			)
+			get_blocklist.page_info.__fields__("has_next_page", end_cursor=True)
 
 			response = self.auth.client(query).get_collection_block_list
 
