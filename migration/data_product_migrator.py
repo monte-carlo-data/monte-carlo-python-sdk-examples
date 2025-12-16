@@ -187,7 +187,8 @@ class DataProductMigrator(BaseMigrator):
 			progress_per_dp = 50 / max(len(data_products_data), 1)
 
 			for dp_name, data in data_products_data.items():
-				existing_uuid = dp_mapping.get(dp_name)
+				existing_info = dp_mapping.get(dp_name)
+				existing_uuid = existing_info['uuid'] if existing_info else None
 				is_new = existing_uuid is None
 				action = "CREATE" if is_new else "UPDATE"
 
@@ -206,15 +207,15 @@ class DataProductMigrator(BaseMigrator):
 						name=dp_name,
 						description=data['description'],
 						mcons=mcons,
-						existing_uuid=existing_uuid
+						uuid=existing_uuid
 					)
 
 					if result['success']:
 						if result['action'] == 'created':
 							created += 1
 							# Update mapping for subsequent operations
-							if result.get('uuid'):
-								dp_mapping[dp_name] = result['uuid']
+							if result.get('data_product_uuid'):
+								dp_mapping[dp_name] = {'uuid': result['data_product_uuid']}
 						else:
 							updated += 1
 						LOGGER.info(f"[{self.entity_name}] {result['action'].upper()}: {dp_name}")
