@@ -97,129 +97,120 @@ class Util(object):
 
         return query
 
-	def get_data_products_list(self):
-		"""Get all data products with basic info.
+    def get_data_products_list(self):
+        """Get all data products with basic info.
 
-		Returns:
-			list: List of data product objects with name, uuid, description, is_deleted fields.
-		"""
-		query = Query()
-		get_data_products = query.get_data_products()
-		get_data_products.__fields__("name", "uuid", "description", "is_deleted")
+        Returns:
+            list: List of data product objects with name, uuid, description, is_deleted fields.
+        """
+        query = Query()
+        get_data_products = query.get_data_products()
+        get_data_products.__fields__("name", "uuid", "description", "is_deleted")
 
-		return self.auth.client(query).get_data_products
+        return self.auth.client(query).get_data_products
 
-	def get_data_product_assets(self, data_product_uuid: str, batch_size: Optional[int] = None) -> list:
-		"""Get all asset MCONs for a data product with pagination.
+    def get_data_product_assets(self, data_product_uuid: str, batch_size: Optional[int] = None) -> list:
+        """Get all asset MCONs for a data product with pagination.
 
-		Args:
-			data_product_uuid (str): UUID of the data product.
-			batch_size (int): Limit of results returned per request.
+        Args:
+            data_product_uuid (str): UUID of the data product.
+            batch_size (int): Limit of results returned per request.
 
-		Returns:
-			list: List of asset MCONs.
-		"""
-		batch_size = self.BATCH if batch_size is None else batch_size
-		mcons = []
-		cursor = None
+        Returns:
+            list: List of asset MCONs.
+        """
+        batch_size = self.BATCH if batch_size is None else batch_size
+        mcons = []
+        cursor = None
 
-		while True:
-			after_clause = f', after: "{cursor}"' if cursor else ''
-			query = f"""
-			query getDataProductAssets {{
-				getDataProductV2(dataProductId: "{data_product_uuid}") {{
-					uuid
-					assets(first: {batch_size}{after_clause}) {{
-						pageInfo {{
-							hasNextPage
-							endCursor
-						}}
-						edges {{
-							node {{
-								mcon
-							}}
-						}}
-					}}
-				}}
-			}}"""
+        while True:
+            # Build query using SDK
+            query = Query()
+            get_data_product = query.get_data_product_v2(data_product_id=data_product_uuid)
+            get_data_product.__fields__("uuid")
+            get_data_product.assets(first=batch_size, **(dict(after=cursor) if cursor else {}))
+            get_data_product.assets.edges.node.__fields__("mcon")
+            get_data_product.assets.page_info.__fields__("has_next_page", end_cursor=True)
 
-			response = self.auth.client(query).get_data_product_v2
+            response = self.auth.client(query).get_data_product_v2
 
-			if response and response.assets:
-				for edge in response.assets.edges:
-					mcons.append(edge.node.mcon)
+            if response and response.assets:
+                for edge in response.assets.edges:
+                    mcons.append(edge.node.mcon)
 
-				if response.assets.page_info.has_next_page:
-					cursor = response.assets.page_info.end_cursor
-				else:
-					break
-			else:
-				break
+                if response.assets.page_info.has_next_page:
+                    cursor = response.assets.page_info.end_cursor
+                else:
+                    break
+            else:
+                break
 
-		return mcons
+        return mcons
 
-	def create_or_update_data_product(self, name: str, description: str = None, uuid: str = None):
-		"""Create or update a data product.
+    def create_or_update_data_product(self, name: str, description: str = None, uuid: str = None, mcons: list = None):
+        """Create or update a data product with optional asset assignment.
 
-		Args:
-			name (str): Name of the data product.
-			description (str): Description of the data product.
-			uuid (str): UUID of existing data product to update.
+        Uses the V2 API which supports assigning assets in a single call.
 
-		Returns:
-			Response object with data_product containing uuid and name.
-		"""
-		mutation = """
-		mutation createOrUpdateDataProduct($name: String!, $description: String, $uuid: UUID) {
-			createOrUpdateDataProduct(name: $name, description: $description, uuid: $uuid) {
-				dataProduct {
-					uuid
-					name
-				}
-			}
-		}
-		"""
+        Args:
+            name (str): Name of the data product.
+            description (str): Description of the data product.
+            uuid (str): UUID of existing data product to update.
+            mcons (list): List of asset MCONs to assign to the data product.
 
-		variables = {"name": name}
-		if description:
-			variables["description"] = description
-		if uuid:
-			variables["uuid"] = uuid
+        Returns:
+            Response object with data_product containing uuid and name.
+        """
+        # Build parameters - only include non-None values
+        params = {"name": name}
+        if description:
+            params["description"] = description
+        if uuid:
+            params["uuid"] = uuid
+        if mcons:
+            params["mcons"] = mcons
 
-		response = self.auth.client(mutation, variables=variables)
-		return response.create_or_update_data_product
+        # Build mutation using SDK
+        mutation = Mutation()
+        create_or_update = mutation.create_or_update_data_product_v2(**params)
+        create_or_update.data_product.__fields__("uuid", "name")
 
-	def set_data_product_assets(self, data_product_id: str, mcons: list):
-		"""Set assets for a data product.
+        response = self.auth.client(mutation)
+        return response.create_or_update_data_product_v2
 
-		Args:
-			data_product_id (str): UUID of the data product.
-			mcons (list): List of asset MCONs to assign.
+    def set_data_product_assets(self, data_product_id: str, mcons: list):
+        """Set assets for a data product.
 
-		Returns:
-			Response object or None if mcons is empty.
-		"""
-		if not mcons:
-			return None
+        Note: This method uses createOrUpdateDataProductV2 internally since
+        the setDataProductAssets mutation has been deprecated.
 
-		mutation = """
-		mutation setDataProductAssets($dataProductId: UUID!, $mcons: [String!]!) {
-			setDataProductAssets(dataProductId: $dataProductId, mcons: $mcons) {
-				dataProduct {
-					uuid
-					name
-				}
-			}
-		}
-		"""
+        Args:
+            data_product_id (str): UUID of the data product.
+            mcons (list): List of asset MCONs to assign.
 
-		variables = {
-			"dataProductId": data_product_id,
-			"mcons": mcons
-		}
+        Returns:
+            Response object or None if mcons is empty.
+        """
+        if not mcons:
+            return None
 
-		response = self.auth.client(mutation, variables=variables)
-		return response.set_data_product_assets
+        # Get the data product name (required for the V2 mutation) using SDK
+        query = Query()
+        get_data_product = query.get_data_product_v2(data_product_id=data_product_id)
+        get_data_product.__fields__("name", "description")
+        
+        dp_response = self.auth.client(query).get_data_product_v2
+        
+        if not dp_response:
+            return None
+
+        # Use the V2 mutation which accepts mcons directly
+        return self.create_or_update_data_product(
+            name=dp_response.name,
+            description=dp_response.description,
+            uuid=data_product_id,
+            mcons=mcons
+        )
 
 
 class Admin(Util):
@@ -266,31 +257,18 @@ class Admin(Util):
 		cursor = None
 
 		while True:
-			after_clause = f', after: "{cursor}"' if cursor else ''
-
-			query = f"""
-			query GetCollectionBlockList {{
-				getCollectionBlockList(
-					first: {batch_size}{after_clause}
-				) {{
-					edges {{
-						cursor
-						node {{
-							id
-							matchType
-							project
-							targetObjectType
-							effect
-							dataset
-							resourceId
-						}}
-					}}
-					pageInfo {{
-						hasNextPage
-						endCursor
-					}}
-				}}
-			}}"""
+			# Build query using SDK
+			query = Query()
+			get_blocklist = query.get_collection_block_list(
+				first=batch_size,
+				**(dict(after=cursor) if cursor else {})
+			)
+			get_blocklist.edges.cursor()
+			get_blocklist.edges.node.__fields__(
+				"id", "match_type", "project", "target_object_type",
+				"effect", "dataset", "resource_id"
+			)
+			get_blocklist.page_info.__fields__("has_next_page", end_cursor=True)
 
 			response = self.auth.client(query).get_collection_block_list
 

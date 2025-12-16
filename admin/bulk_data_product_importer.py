@@ -32,9 +32,196 @@ class BulkDataProductImporter(Admin):
 		super().__init__(profile, config_file, progress)
 		self.progress_bar = progress
 
+	def parse_data_product_csv(self, input_file: str) -> dict:
+		"""Parse a data product CSV file and return organized data.
+
+		This method returns data instead of calling sys.exit(), making it
+		suitable for use by other modules like the migration tool.
+
+		Args:
+			input_file (str): Path to CSV file.
+
+		Returns:
+			dict: Result with keys:
+				- success (bool): Whether parsing succeeded
+				- data_products (dict): Name -> {description, mcons} mapping
+				- count (int): Number of data products found
+				- errors (list): Any errors encountered
+		"""
+		file_path = Path(input_file)
+		errors = []
+		data_products = {}
+
+		if not file_path.is_file():
+			return {
+				'success': False,
+				'data_products': {},
+				'count': 0,
+				'errors': [f"File not found: {input_file}"]
+			}
+
+		try:
+			with open(input_file, 'r') as csvfile:
+				reader = csv.DictReader(csvfile)
+
+				# Check for required column
+				if reader.fieldnames is None:
+					return {
+						'success': False,
+						'data_products': {},
+						'count': 0,
+						'errors': ["CSV file is empty or has no headers"]
+					}
+
+				if 'data_product_name' not in reader.fieldnames:
+					return {
+						'success': False,
+						'data_products': {},
+						'count': 0,
+						'errors': ["Missing required column: data_product_name"]
+					}
+
+				row_num = 1  # Header is row 1
+				for row in reader:
+					row_num += 1
+					name = row.get('data_product_name', '').strip()
+					desc = row.get('data_product_description', '').strip()
+					mcon = row.get('asset_mcon', '').strip()
+
+					if not name:
+						errors.append(f"Row {row_num}: Empty data_product_name")
+						continue
+
+					if name not in data_products:
+						data_products[name] = {'description': desc or None, 'mcons': []}
+
+					# Update description if we have one and didn't before
+					if desc and not data_products[name]['description']:
+						data_products[name]['description'] = desc
+
+					if mcon:
+						data_products[name]['mcons'].append(mcon)
+
+		except Exception as e:
+			errors.append(f"Error reading file: {str(e)}")
+
+		if not data_products and not errors:
+			errors.append("No data products found in input file")
+
+		return {
+			'success': len(errors) == 0 and len(data_products) > 0,
+			'data_products': data_products,
+			'count': len(data_products),
+			'errors': errors
+		}
+
+	def get_existing_data_products_map(self) -> dict:
+		"""Get a mapping of existing data products in Monte Carlo.
+
+		Returns:
+			dict: Data product name -> dict with 'uuid', 'description', 'is_deleted'
+		"""
+		LOGGER.info("Fetching existing data products...")
+		existing_dps = self.get_data_products_list()
+
+		dp_map = {
+			dp.name: {
+				'uuid': dp.uuid,
+				'description': dp.description,
+				'is_deleted': dp.is_deleted
+			}
+			for dp in existing_dps
+			if not dp.is_deleted
+		}
+
+		LOGGER.info(f"Found {len(dp_map)} existing data products")
+		return dp_map
+
+	def import_single_data_product(self, name: str, description: str = None,
+								   mcons: list = None, uuid: str = None) -> dict:
+		"""Create or update a single data product.
+
+		This method handles one data product at a time, returning a result dict.
+		This allows callers (like the migration tool) to implement dry-run
+		mode or custom error handling.
+
+		Args:
+			name (str): Data product name.
+			description (str): Data product description (optional).
+			mcons (list): List of asset MCONs to assign (optional).
+			uuid (str): Existing data product UUID for updates (optional).
+
+		Returns:
+			dict: Result with keys:
+				- success (bool): Whether import succeeded
+				- data_product_uuid (str): UUID of created/updated data product
+				- data_product_name (str): Name of the data product
+				- action (str): 'created' or 'updated'
+				- assets_assigned (int): Number of assets assigned
+				- error (str): Error message if failed
+		"""
+		mcons = mcons or []
+
+		try:
+			# Step 1: Create or update the data product
+			response = self.create_or_update_data_product(
+				name=name,
+				description=description,
+				uuid=uuid
+			)
+
+			if not response or not response.data_product:
+				return {
+					'success': False,
+					'data_product_uuid': None,
+					'data_product_name': name,
+					'action': None,
+					'assets_assigned': 0,
+					'error': "No response from API"
+				}
+
+			dp = response.data_product
+			action = 'updated' if uuid else 'created'
+			LOGGER.info(f"Data product '{dp.name}' {action} ({dp.uuid})")
+
+			# Step 2: Set assets for the data product
+			assets_assigned = 0
+			asset_error = None
+			if mcons:
+				try:
+					self.set_data_product_assets(dp.uuid, mcons)
+					assets_assigned = len(mcons)
+					LOGGER.info(f"  Assigned {assets_assigned} assets")
+				except Exception as e:
+					asset_error = f"Failed to assign assets: {e}"
+					LOGGER.error(f"  {asset_error}")
+
+			return {
+				'success': True,
+				'data_product_uuid': dp.uuid,
+				'data_product_name': dp.name,
+				'action': action,
+				'assets_assigned': assets_assigned,
+				'error': asset_error  # May have partial success
+			}
+
+		except Exception as e:
+			LOGGER.error(f"Failed to create/update data product '{name}': {e}")
+			return {
+				'success': False,
+				'data_product_uuid': None,
+				'data_product_name': name,
+				'action': None,
+				'assets_assigned': 0,
+				'error': str(e)
+			}
+
 	@staticmethod
 	def validate_input_file(input_file: str):
 		"""Validate input CSV file and return grouped data products.
+
+		DEPRECATED: Use parse_data_product_csv() instead for better error handling.
+		This method is kept for backward compatibility.
 
 		Args:
 			input_file (str): Path to input CSV file.

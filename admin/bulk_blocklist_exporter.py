@@ -33,15 +33,34 @@ class BulkBlocklistExporter(Admin):
 		super().__init__(profile, config_file, progress)
 		self.progress_bar = progress
 
+	def get_all_blocklist_entries(self) -> list:
+		"""Fetch all blocklist entries from Monte Carlo.
+
+		Returns structured data that can be used by other tools (like the migration module)
+		without requiring file I/O.
+
+		Returns:
+			list[dict]: List of blocklist entry dictionaries with keys:
+				- resource_id (str): Warehouse/connection UUID
+				- target_object_type (str): Type of object (project, dataset, schema, table)
+				- match_type (str): How to match (EXACT, etc.)
+				- dataset (str): Dataset/schema name
+				- project (str): Project/database name
+				- effect (str): Block effect
+		"""
+		LOGGER.info("Fetching blocklist entries...")
+		entries = self.get_blocklist_entries()  # Uses parent class method with pagination
+		LOGGER.info(f"Found {len(entries)} blocklist entries")
+		return entries
+
 	def export_blocklist(self, output_file: str):
 		"""Export all blocklist entries to CSV.
 
 		Args:
 			output_file (str): Path to output CSV file.
 		"""
-		LOGGER.info("Fetching blocklist entries...")
-		entries = self.get_blocklist_entries()
-		LOGGER.info(f"Found {len(entries)} blocklist entries")
+		# Use the shared method to fetch data
+		entries = self.get_all_blocklist_entries()
 
 		if not entries:
 			LOGGER.info("No blocklist entries found.")

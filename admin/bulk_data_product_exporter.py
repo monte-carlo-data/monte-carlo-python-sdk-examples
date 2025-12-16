@@ -34,28 +34,55 @@ class BulkDataProductExporter(Admin):
 		super().__init__(profile, config_file, progress)
 		self.progress_bar = progress
 
-	def export_data_products(self, output_file: str):
-		"""Export all data products and their assets to CSV.
+	def get_all_data_products_with_assets(self) -> list:
+		"""Fetch all data products with their assets.
 
-		Args:
-			output_file (str): Path to output CSV file.
+		Returns structured data that can be used by other tools (like the migration module)
+		without requiring file I/O.
+
+		Returns:
+			list[dict]: List of dictionaries with keys:
+				- name (str): Data product name
+				- description (str): Data product description
+				- uuid (str): Data product UUID
+				- is_deleted (bool): Whether the data product is deleted
+				- assets (list): List of asset MCONs
 		"""
 		LOGGER.info("Fetching data products...")
 		data_products = self.get_data_products_list()
 		active_dps = [dp for dp in data_products if not dp.is_deleted]
 		LOGGER.info(f"Found {len(active_dps)} active data products")
 
-		rows_to_write = []
-
+		results = []
 		for dp in active_dps:
 			assets = self.get_data_product_assets(dp.uuid)
 			LOGGER.info(f"  - {dp.name}: {len(assets)} assets")
+			results.append({
+				'name': dp.name,
+				'description': dp.description or '',
+				'uuid': dp.uuid,
+				'is_deleted': dp.is_deleted,
+				'assets': assets
+			})
 
-			if assets:
-				for mcon in assets:
-					rows_to_write.append([dp.name, dp.description or '', mcon])
+		return results
+
+	def export_data_products(self, output_file: str):
+		"""Export all data products and their assets to CSV.
+
+		Args:
+			output_file (str): Path to output CSV file.
+		"""
+		# Use the shared method to fetch data
+		data_products = self.get_all_data_products_with_assets()
+
+		rows_to_write = []
+		for dp in data_products:
+			if dp['assets']:
+				for mcon in dp['assets']:
+					rows_to_write.append([dp['name'], dp['description'], mcon])
 			else:
-				rows_to_write.append([dp.name, dp.description or '', ''])
+				rows_to_write.append([dp['name'], dp['description'], ''])
 
 		with open(output_file, 'w', newline='') as csvfile:
 			writer = csv.writer(csvfile)
