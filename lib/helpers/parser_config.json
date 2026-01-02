@@ -110,6 +110,38 @@
                     "help": "Path to CSV file from bulk_blocklist_exporter.py.\n\nExpected format (with header):\nresource_id,target_object_type,match_type,dataset,project,effect"
                   }
               }
+          },
+        "bulk_tag_exporterv2.py": {
+              "description": "\n\nExports all object tags (properties) to a CSV file. Exports from all warehouses by default, or a specific warehouse if specified. The output can be used with bulk_tag_importerv2.py to migrate tags to another workspace.",
+              "arguments": {
+                  "profile": {
+                      "default": "default",
+                      "required": false,
+                      "help": "Specify an MCD profile name. Uses default otherwise."
+                  },
+                  "output_file": {
+                    "required": true,
+                    "help": "Path to output CSV file.\n\nOutput format (with header):\nwarehouse_id,full_table_id,tag_key,tag_value\nabc-123-uuid,database:schema.table,owner,team_data"
+                  },
+                  "warehouse_id": {
+                    "required": false,
+                    "help": "Optional warehouse UUID to filter. If not specified, exports from all warehouses."
+                  }
+              }
+          },
+        "bulk_tag_importerv2.py": {
+              "description": "\n\nImports object tags (properties) from a CSV file (exported from bulk_tag_exporterv2.py). Creates or updates tags on tables in the target environment.",
+              "arguments": {
+                  "profile": {
+                      "default": "default",
+                      "required": false,
+                      "help": "Specify an MCD profile name. Uses default otherwise."
+                  },
+                  "input_file": {
+                    "required": true,
+                    "help": "Path to CSV file from bulk_tag_exporterv2.py.\n\nExpected format (with header):\nwarehouse_id,full_table_id,tag_key,tag_value\nabc-123-uuid,database:schema.table,owner,team_data"
+                  }
+              }
           }
 	},
 	"monitors": {

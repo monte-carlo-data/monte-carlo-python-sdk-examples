@@ -1,6 +1,6 @@
 # Migration Module
 
-The `migration/` module provides a unified utility for exporting and importing Monte Carlo data observability configurations between environments. It supports migrating **domains**, **data products**, and **blocklists**.
+The `migration/` module provides a unified utility for exporting and importing Monte Carlo data observability configurations between environments. It supports migrating **domains**, **data products**, **blocklists**, and **tags**.
 
 ## Overview
 
@@ -19,6 +19,7 @@ This module is designed to facilitate environment migrations (e.g. dev → prod 
 | `base_migrator.py` | Abstract base class defining the interface (`export()`, `import_data()`, `validate()`) that all migrators implement. |
 | `blocklist_migrator.py` | Handles blocklist entries (ingestion rules) that control which tables/datasets/projects are monitored. |
 | `domain_migrator.py` | Handles domains—logical groupings of tables for asset organization. |
+| `tag_migrator.py` | Handles object tags (properties)—key-value pairs attached to tables for organization. |
 | `data_product_migrator.py` | Handles data products—business-facing data assets for stakeholder monitoring. |
 
 ## Usage
@@ -40,7 +41,7 @@ python migration/workspace_migrator.py export --profile source_env --entities do
 Export to a custom directory:
 
 ```bash
-python migration/workspace_migrator.py export --profile source_env --output-dir ./my-exports
+python migration/workspace_migrator.py export --profile source_env --output_dir ./my-exports
 ```
 
 ### Validate
@@ -68,7 +69,7 @@ python migration/workspace_migrator.py import --profile target_env --force yes
 Import from a custom directory:
 
 ```bash
-python migration/workspace_migrator.py import --profile target_env --input-dir ./my-exports --force yes
+python migration/workspace_migrator.py import --profile target_env --input_dir ./my-exports --force yes
 ```
 
 ## Supported Entities
@@ -77,8 +78,8 @@ python migration/workspace_migrator.py import --profile target_env --input-dir .
 |--------|--------|-------------|
 | `blocklists` | ✅ Implemented | `resource_id`, `target_object_type`, `match_type`, `dataset`, `project`, `effect` |
 | `domains` | ✅ Implemented | `domain_name`, `domain_description`, `asset_mcon` |
+| `tags` | ✅ Implemented | `warehouse_id`, `full_table_id`, `tag_key`, `tag_value` |
 | `data_products` | ✅ Implemented | `data_product_name`, `data_product_description`, `asset_mcon` |
-| `tags` | 🚧 Placeholder | — |
 | `exclusion_windows` | 🚧 Placeholder | — |
 
 Entities are imported in dependency order: blocklists → domains → tags → exclusion_windows → data_products.
@@ -132,6 +133,7 @@ Migrators delegate to admin bulk scripts for core operations:
 |----------|------|
 | `BlocklistMigrator` | `bulk_blocklist_exporter.py`, `bulk_blocklist_importer.py` |
 | `DomainMigrator` | `bulk_domain_exporter.py`, `bulk_domain_importerv2.py` |
+| `TagMigrator` | `bulk_tag_exporterv2.py`, `bulk_tag_importerv2.py` |
 | `DataProductMigrator` | `bulk_data_product_exporter.py`, `bulk_data_product_importer.py` |
 
 ### Logging (`logs/`)
@@ -142,7 +144,7 @@ All operations are logged to `logs/workspace_migrator-YYYY-MM-DD.log` with detai
 
 To add a new entity migrator:
 
-1. Create a new file (e.g., `tag_migrator.py`)
+1. Create a new file (e.g., `my_entity_migrator.py`)
 2. Inherit from `BaseMigrator`
 3. Implement required properties: `entity_name`, `output_filename`
 4. Implement required methods: `export()`, `import_data()`, `validate()`
@@ -152,14 +154,14 @@ To add a new entity migrator:
 ```python
 from migration.base_migrator import BaseMigrator
 
-class TagMigrator(BaseMigrator):
+class MyEntityMigrator(BaseMigrator):
     @property
     def entity_name(self) -> str:
-        return "tags"
+        return "my_entity"
 
     @property
     def output_filename(self) -> str:
-        return "tags.csv"
+        return "my_entity.csv"
 
     def export(self, output_file: str = None) -> dict:
         # Implementation

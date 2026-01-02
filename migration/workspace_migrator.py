@@ -2,7 +2,7 @@
 Workspace Migrator - Unified migration utility for Monte Carlo configurations.
 
 This utility exports and imports MC data observability configurations between
-environments, including domains, data products, and blocklists.
+environments, including domains, data products, blocklists, and tags.
 
 Usage:
     # Export all entities
@@ -39,6 +39,7 @@ from rich.progress import Progress
 from migration.blocklist_migrator import BlocklistMigrator
 from migration.domain_migrator import DomainMigrator
 from migration.data_product_migrator import DataProductMigrator
+from migration.tag_migrator import TagMigrator
 
 # Initialize logger
 util_name = os.path.basename(__file__).split('.')[0]
@@ -50,7 +51,7 @@ WORKSPACE_MIGRATOR_LOG = LOGS_DIR / f"{util_name}-{datetime.date.today()}.log"
 # Available entity types and their import order (dependencies first)
 # Note: Some entities are placeholders for future implementation
 AVAILABLE_ENTITIES = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products']
-IMPLEMENTED_ENTITIES = ['blocklists', 'domains', 'data_products']  # Currently implemented
+IMPLEMENTED_ENTITIES = ['blocklists', 'domains', 'tags', 'data_products']  # Currently implemented
 IMPORT_ORDER = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products']  # Dependency order
 
 
@@ -80,9 +81,9 @@ class WorkspaceMigrator(Util):
 			self._migrators = {
 				'blocklists': BlocklistMigrator(self.profile, progress=self.progress_bar),
 				'domains': DomainMigrator(self.profile, progress=self.progress_bar),
+				'tags': TagMigrator(self.profile, progress=self.progress_bar),
 				'data_products': DataProductMigrator(self.profile, progress=self.progress_bar),
-				# Placeholders for future implementation
-				'tags': None,
+				# Placeholder for future implementation
 				'exclusion_windows': None,
 			}
 		return self._migrators
