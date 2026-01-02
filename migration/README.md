@@ -1,6 +1,6 @@
 # Migration Module
 
-The `migration/` module provides a unified utility for exporting and importing Monte Carlo data observability configurations between environments. It supports migrating **domains**, **data products**, **blocklists**, and **tags**.
+The `migration/` module provides a unified utility for exporting and importing Monte Carlo data observability configurations between environments. It supports migrating **domains**, **data products**, **blocklists**, **tags**, and **exclusion windows**.
 
 ## Overview
 
@@ -20,6 +20,7 @@ This module is designed to facilitate environment migrations (e.g. dev → prod 
 | `blocklist_migrator.py` | Handles blocklist entries (ingestion rules) that control which tables/datasets/projects are monitored. |
 | `domain_migrator.py` | Handles domains—logical groupings of tables for asset organization. |
 | `tag_migrator.py` | Handles object tags (properties)—key-value pairs attached to tables for organization. |
+| `exclusion_window_migrator.py` | Handles exclusion windows (data maintenance entries)—time periods when anomaly detection is suppressed. |
 | `data_product_migrator.py` | Handles data products—business-facing data assets for stakeholder monitoring. |
 
 ## Usage
@@ -79,8 +80,8 @@ python migration/workspace_migrator.py import --profile target_env --input_dir .
 | `blocklists` | ✅ Implemented | `resource_id`, `target_object_type`, `match_type`, `dataset`, `project`, `effect` |
 | `domains` | ✅ Implemented | `domain_name`, `domain_description`, `asset_mcon` |
 | `tags` | ✅ Implemented | `warehouse_id`, `full_table_id`, `tag_key`, `tag_value` |
+| `exclusion_windows` | ✅ Implemented | `id`, `resource_uuid`, `scope`, `database`, `dataset`, `full_table_id`, `start_time`, `end_time`, `reason`, `reason_type` |
 | `data_products` | ✅ Implemented | `data_product_name`, `data_product_description`, `asset_mcon` |
-| `exclusion_windows` | 🚧 Placeholder | — |
 
 Entities are imported in dependency order: blocklists → domains → tags → exclusion_windows → data_products.
 
@@ -134,6 +135,7 @@ Migrators delegate to admin bulk scripts for core operations:
 | `BlocklistMigrator` | `bulk_blocklist_exporter.py`, `bulk_blocklist_importer.py` |
 | `DomainMigrator` | `bulk_domain_exporter.py`, `bulk_domain_importerv2.py` |
 | `TagMigrator` | `bulk_tag_exporterv2.py`, `bulk_tag_importerv2.py` |
+| `ExclusionWindowMigrator` | `bulk_exclusion_window_exporter.py`, `bulk_exclusion_window_importer.py` |
 | `DataProductMigrator` | `bulk_data_product_exporter.py`, `bulk_data_product_importer.py` |
 
 ### Logging (`logs/`)

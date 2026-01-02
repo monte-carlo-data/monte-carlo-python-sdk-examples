@@ -40,6 +40,7 @@ from migration.blocklist_migrator import BlocklistMigrator
 from migration.domain_migrator import DomainMigrator
 from migration.data_product_migrator import DataProductMigrator
 from migration.tag_migrator import TagMigrator
+from migration.exclusion_window_migrator import ExclusionWindowMigrator
 
 # Initialize logger
 util_name = os.path.basename(__file__).split('.')[0]
@@ -51,7 +52,7 @@ WORKSPACE_MIGRATOR_LOG = LOGS_DIR / f"{util_name}-{datetime.date.today()}.log"
 # Available entity types and their import order (dependencies first)
 # Note: Some entities are placeholders for future implementation
 AVAILABLE_ENTITIES = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products']
-IMPLEMENTED_ENTITIES = ['blocklists', 'domains', 'tags', 'data_products']  # Currently implemented
+IMPLEMENTED_ENTITIES = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products']  # Currently implemented
 IMPORT_ORDER = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products']  # Dependency order
 
 
@@ -82,9 +83,8 @@ class WorkspaceMigrator(Util):
 				'blocklists': BlocklistMigrator(self.profile, progress=self.progress_bar),
 				'domains': DomainMigrator(self.profile, progress=self.progress_bar),
 				'tags': TagMigrator(self.profile, progress=self.progress_bar),
+				'exclusion_windows': ExclusionWindowMigrator(self.profile, progress=self.progress_bar),
 				'data_products': DataProductMigrator(self.profile, progress=self.progress_bar),
-				# Placeholder for future implementation
-				'exclusion_windows': None,
 			}
 		return self._migrators
 
