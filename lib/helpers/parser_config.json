@@ -142,6 +142,34 @@
                     "help": "Path to CSV file from bulk_tag_exporterv2.py.\n\nExpected format (with header):\nwarehouse_id,full_table_id,tag_key,tag_value\nabc-123-uuid,database:schema.table,owner,team_data"
                   }
               }
+          },
+        "bulk_exclusion_window_exporter.py": {
+              "description": "\n\nExports all exclusion windows (data maintenance entries) to a CSV file. The output can be used with bulk_exclusion_window_importer.py to migrate exclusion windows to another workspace.",
+              "arguments": {
+                  "profile": {
+                      "default": "default",
+                      "required": false,
+                      "help": "Specify an MCD profile name. Uses default otherwise."
+                  },
+                  "output_file": {
+                    "required": true,
+                    "help": "Path to output CSV file.\n\nOutput format (with header):\nid,resource_uuid,scope,database,dataset,full_table_id,start_time,end_time,reason,reason_type\n\nScope values: WAREHOUSE, DATABASE, SCHEMA, TABLE"
+                  }
+              }
+          },
+        "bulk_exclusion_window_importer.py": {
+              "description": "\n\nImports exclusion windows (data maintenance entries) from a CSV file. Creates or updates maintenance windows using createOrUpdateDataMaintenanceEntry mutation.",
+              "arguments": {
+                  "profile": {
+                      "default": "default",
+                      "required": false,
+                      "help": "Specify an MCD profile name. Uses default otherwise."
+                  },
+                  "input_file": {
+                    "required": true,
+                    "help": "Path to CSV file from bulk_exclusion_window_exporter.py.\n\nExpected format (with header):\nid,resource_uuid,scope,database,dataset,full_table_id,start_time,end_time,reason,reason_type"
+                  }
+              }
           }
 	},
 	"monitors": {
