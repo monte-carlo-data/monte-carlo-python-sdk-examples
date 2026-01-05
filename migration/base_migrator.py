@@ -16,7 +16,7 @@ from rich.progress import Progress
 from lib.helpers.logs import LOGGER
 
 
-class BaseMigrator(object):
+class BaseMigrator(ABC):
 	"""Abstract base class for entity migrators.
 
 	All migrators must implement:
