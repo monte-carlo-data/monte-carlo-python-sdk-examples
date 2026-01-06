@@ -47,6 +47,8 @@ class BulkTagImporterV2(Tables):
 		"""
 		super().__init__(profile, config_file, progress)
 		self.progress_bar = progress
+		self._mcon_cache = {}  # Cache for full_table_id -> mcon lookups
+		self._existing_tags = {}  # Cache for (mcon, tag_key) -> tag_value
 
 	def parse_tag_csv(self, input_file: str) -> dict:
 		"""Parse a tag CSV file and return organized data.
@@ -159,6 +161,66 @@ class BulkTagImporterV2(Tables):
 			'duplicates': duplicates
 		}
 
+	def lookup_mcon(self, warehouse_id: str, full_table_id: str) -> str:
+		"""Look up the MCON for a table given its full_table_id.
+
+		Uses the search parameter for targeted lookup instead of fetching all tables.
+		Results are cached to avoid duplicate API calls. Also fetches and caches
+		existing tags for the table to support skip/update detection during import.
+
+		Args:
+			warehouse_id (str): The warehouse UUID.
+			full_table_id (str): The full table identifier (e.g., 'db:schema.table').
+
+		Returns:
+			str: The MCON if found, empty string otherwise.
+		"""
+		# Normalize to lowercase for consistent cache keys
+		full_table_id_lower = full_table_id.lower()
+		cache_key = (warehouse_id, full_table_id_lower)
+
+		# Check cache first
+		if cache_key in self._mcon_cache:
+			return self._mcon_cache[cache_key]
+
+		try:
+			# Use search parameter for targeted lookup
+			query = Query()
+			get_tables = query.get_tables(
+				dw_id=warehouse_id,
+				search=full_table_id,
+				first=10,
+				is_deleted=False
+			)
+			get_tables.edges.node.__fields__("full_table_id", "mcon")
+			# Also fetch existing tags for skip/update detection
+			get_tables.edges.node.object_properties.__fields__("property_name", "property_value")
+
+			response = self.auth.client(query).get_tables
+
+			if response and response.edges:
+				for edge in response.edges:
+					# Exact match check (search may return partial matches)
+					if edge.node.full_table_id.lower() == full_table_id_lower:
+						mcon = edge.node.mcon
+						self._mcon_cache[cache_key] = mcon
+
+						# Cache existing tags for this table
+						if edge.node.object_properties:
+							for prop in edge.node.object_properties:
+								tag_key = (mcon, prop['property_name'])
+								self._existing_tags[tag_key] = prop['property_value']
+
+						return mcon
+
+			LOGGER.debug(f"Could not find MCON for {full_table_id}")
+			self._mcon_cache[cache_key] = ''
+			return ''
+
+		except Exception as e:
+			LOGGER.error(f"Error looking up MCON for {full_table_id}: {e}")
+			return ''
+
 	def get_mcon_mapping_for_warehouse(self, warehouse_id: str) -> dict:
 		"""Get full_table_id -> mcon mapping for a warehouse.
 
@@ -204,61 +266,6 @@ class BulkTagImporterV2(Tables):
 
 		LOGGER.info(f"Built mapping for {len(mcon_map)} tables")
 		return mcon_map
-
-	def get_existing_tags_for_tables(self, mcons: list) -> dict:
-		"""Get existing tags for specific tables by their MCONs.
-
-		Used to detect what tags already exist (for skip/update logic).
-
-		Args:
-			mcons (list): List of MCONs to check.
-
-		Returns:
-			dict: mcon -> list of {tag_key, tag_value}
-		"""
-		existing_tags = {}
-
-		# Query tables with their object_properties
-		# We need to query by MCON, but the API doesn't support direct MCON filtering
-		# So we'll need to get all tables and filter
-		# For efficiency, we batch this per warehouse
-
-		all_warehouses, _ = self.get_warehouses()
-
-		for wh_id in all_warehouses:
-			cursor = None
-			while True:
-				query = Query()
-				get_tables = query.get_tables(
-					first=self.BATCH,
-					dw_id=wh_id,
-					is_deleted=False,
-					**(dict(after=cursor) if cursor else {})
-				)
-				get_tables.edges.node.__fields__("mcon")
-				get_tables.edges.node.object_properties.__fields__("property_name", "property_value")
-				get_tables.page_info.__fields__(end_cursor=True)
-				get_tables.page_info.__fields__("has_next_page")
-
-				response = self.auth.client(query).get_tables
-
-				for table in response.edges:
-					if table.node.mcon in mcons:
-						tags = []
-						if table.node.object_properties:
-							for prop in table.node.object_properties:
-								tags.append({
-									'tag_key': prop['property_name'],
-									'tag_value': prop['property_value']
-								})
-						existing_tags[table.node.mcon] = tags
-
-				if response.page_info.has_next_page:
-					cursor = response.page_info.end_cursor
-				else:
-					break
-
-		return existing_tags
 
 	def import_tag_batch(self, tags: list) -> dict:
 		"""Import a batch of tags (max 99 at a time).
@@ -324,23 +331,25 @@ class BulkTagImporterV2(Tables):
 		tags_data = parse_result['tags']
 		LOGGER.info(f"Found {len(tags_data)} tags in input file")
 
-		# Extract unique warehouse IDs from the CSV to optimize queries
-		csv_warehouse_ids = set(tag['warehouse_id'] for tag in tags_data if tag.get('warehouse_id'))
-		
-		# Build MCON mapping only for relevant warehouses
-		if csv_warehouse_ids:
-			LOGGER.info(f"Building MCON mapping for {len(csv_warehouse_ids)} warehouse(s) from CSV...")
-			mcon_mapping = {}
-			for wh_id in csv_warehouse_ids:
-				LOGGER.info(f"  Processing warehouse: {wh_id}")
-				warehouse_map = self.get_mcon_mapping_for_warehouse(wh_id)
-				LOGGER.info(f"    Found {len(warehouse_map)} tables")
-				mcon_mapping.update(warehouse_map)
-			LOGGER.info(f"Built mapping for {len(mcon_mapping)} tables total")
-		else:
-			# Fallback: if no warehouse_id in CSV, query all warehouses
-			LOGGER.info("No warehouse_id in CSV, querying all warehouses...")
-			mcon_mapping = self.get_mcon_mapping_all_warehouses()
+		# Get unique (warehouse_id, full_table_id) pairs for targeted lookups
+		unique_tables = set()
+		for tag in tags_data:
+			if tag.get('warehouse_id') and tag.get('full_table_id'):
+				unique_tables.add((tag['warehouse_id'], tag['full_table_id'].lower()))
+
+		LOGGER.info(f"Looking up MCONs for {len(unique_tables)} unique tables...")
+
+		# Targeted lookup: query only the tables we need
+		tables_found = 0
+		tables_not_found = 0
+		for warehouse_id, full_table_id in unique_tables:
+			mcon = self.lookup_mcon(warehouse_id, full_table_id)
+			if mcon:
+				tables_found += 1
+			else:
+				tables_not_found += 1
+
+		LOGGER.info(f"Resolved {tables_found} tables ({tables_not_found} not found)")
 
 		# Process tags
 		created = 0
@@ -348,14 +357,18 @@ class BulkTagImporterV2(Tables):
 		failed = 0
 		errors = []
 
-		# Prepare tags for import (resolve full_table_id -> mcon)
+		# Prepare tags for import (resolve full_table_id -> mcon using cache)
 		tags_to_import = []
 		for tag in tags_data:
-			full_table_id = tag['full_table_id']
-			mcon = mcon_mapping.get(full_table_id)
+			full_table_id = tag['full_table_id'].lower()
+			warehouse_id = tag.get('warehouse_id', '')
+
+			# Look up from cache (already populated by targeted lookups above)
+			cache_key = (warehouse_id, full_table_id)
+			mcon = self._mcon_cache.get(cache_key, '')
 
 			if not mcon:
-				LOGGER.warning(f"Table not found: {full_table_id}")
+				LOGGER.warning(f"Table not found: {tag['full_table_id']}")
 				skipped += 1
 				continue
 
@@ -363,7 +376,7 @@ class BulkTagImporterV2(Tables):
 				'mcon_id': mcon,
 				'property_name': tag['tag_key'],
 				'property_value': tag['tag_value'],
-				'full_table_id': full_table_id  # Keep for logging
+				'full_table_id': tag['full_table_id']  # Keep for logging
 			})
 
 		LOGGER.info(f"Resolved {len(tags_to_import)} tags to import ({skipped} tables not found)")
@@ -381,49 +394,111 @@ class BulkTagImporterV2(Tables):
 		if duplicates_removed > 0:
 			LOGGER.info(f"Removed {duplicates_removed} duplicate tags, {len(tags_to_import)} unique tags to import")
 
+		# Compare against existing tags to categorize as create/update/skip
+		tags_to_create = []
+		tags_to_update = []
+		updated = 0
+
+		for tag in tags_to_import:
+			existing_key = (tag['mcon_id'], tag['property_name'])
+
+			if existing_key not in self._existing_tags:
+				# Tag doesn't exist -> CREATE
+				tags_to_create.append(tag)
+			else:
+				existing_value = self._existing_tags[existing_key]
+				# Normalize None to empty string for comparison
+				existing_normalized = existing_value if existing_value is not None else ''
+				new_normalized = tag['property_value'] if tag['property_value'] is not None else ''
+
+				if existing_normalized != new_normalized:
+					# Tag exists but value changed -> UPDATE
+					tags_to_update.append(tag)
+				else:
+					# Tag exists with same value -> SKIP
+					skipped += 1
+
+		# Combine create and update tags for API call
+		tags_to_send = tags_to_create + tags_to_update
+
+		LOGGER.info(f"Tags to create: {len(tags_to_create)}, to update: {len(tags_to_update)}, unchanged (skip): {skipped}")
+
 		if dry_run:
 			# In dry-run mode, just log what would be done
-			for tag in tags_to_import:
-				LOGGER.info(f"WOULD CREATE/UPDATE: {tag['full_table_id']} - {tag['property_name']}={tag['property_value']}")
+			for tag in tags_to_create:
+				LOGGER.info(f"WOULD CREATE: {tag['full_table_id']} - {tag['property_name']}={tag['property_value']}")
 				created += 1
+			for tag in tags_to_update:
+				existing_value = self._existing_tags.get((tag['mcon_id'], tag['property_name']), '')
+				LOGGER.info(f"WOULD UPDATE: {tag['full_table_id']} - {tag['property_name']}={existing_value} -> {tag['property_value']}")
+				updated += 1
 		else:
 			# Process in batches
 			batch = []
-			for tag in tags_to_import:
+			batch_creates = 0
+			batch_updates = 0
+
+			for tag in tags_to_create:
 				batch.append({
 					'mcon_id': tag['mcon_id'],
 					'property_name': tag['property_name'],
 					'property_value': tag['property_value']
 				})
+				batch_creates += 1
 
 				if len(batch) >= self.BATCH_SIZE:
 					result = self.import_tag_batch(batch)
 					if result['success']:
-						created += result['count']
-						LOGGER.info(f"Imported batch of {result['count']} tags")
+						created += batch_creates
+						LOGGER.info(f"Imported batch of {result['count']} tags ({batch_creates} creates)")
 					else:
 						failed += len(batch)
 						errors.append(result['error'])
 						LOGGER.error(f"Batch import failed: {result['error']}")
 					batch = []
+					batch_creates = 0
+
+			for tag in tags_to_update:
+				batch.append({
+					'mcon_id': tag['mcon_id'],
+					'property_name': tag['property_name'],
+					'property_value': tag['property_value']
+				})
+				batch_updates += 1
+
+				if len(batch) >= self.BATCH_SIZE:
+					result = self.import_tag_batch(batch)
+					if result['success']:
+						created += batch_creates
+						updated += batch_updates
+						LOGGER.info(f"Imported batch of {result['count']} tags ({batch_creates} creates, {batch_updates} updates)")
+					else:
+						failed += len(batch)
+						errors.append(result['error'])
+						LOGGER.error(f"Batch import failed: {result['error']}")
+					batch = []
+					batch_creates = 0
+					batch_updates = 0
 
 			# Import remaining batch
 			if batch:
 				result = self.import_tag_batch(batch)
 				if result['success']:
-					created += result['count']
-					LOGGER.info(f"Imported final batch of {result['count']} tags")
+					created += batch_creates
+					updated += batch_updates
+					LOGGER.info(f"Imported final batch of {result['count']} tags ({batch_creates} creates, {batch_updates} updates)")
 				else:
 					failed += len(batch)
 					errors.append(result['error'])
 					LOGGER.error(f"Final batch import failed: {result['error']}")
 
-		LOGGER.info(f"Import complete: {created} created/updated, {skipped} skipped, {failed} failed")
+		LOGGER.info(f"Import complete: {created} created, {updated} updated, {skipped} skipped, {failed} failed")
 
 		return {
 			'success': failed == 0 and len(errors) == 0,
 			'dry_run': dry_run,
 			'created': created,
+			'updated': updated,
 			'skipped': skipped,
 			'failed': failed,
 			'errors': errors
