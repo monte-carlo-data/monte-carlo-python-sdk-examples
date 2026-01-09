@@ -4,11 +4,13 @@
 # 3. Optionally specify a warehouse ID to export tags from a specific warehouse only
 #
 # Output CSV format:
-#   full_table_id,tag_key,tag_value
-#   database:schema.table,owner,team_data
-#   database:schema.table,priority,high
+#   warehouse_id,warehouse_name,full_table_id,asset_type,tag_key,tag_value
+#   abc-123-uuid,my_warehouse,database:schema.table,table,owner,team_data
+#   def-456-uuid,my_warehouse,database:schema.view,view,priority,high
 #
 # Note: The output CSV can be used with bulk_tag_importerv2.py to migrate tags to another workspace.
+# The asset_type and warehouse_name columns enable MCON construction in the destination,
+# reducing API calls from N (per table) to 1 (per warehouse).
 
 import os
 import sys
@@ -61,24 +63,27 @@ class BulkTagExporterV2(Tables):
 			is_deleted=False,
 			**(dict(after=after) if after else {})
 		)
-		get_tables.edges.node.__fields__("full_table_id", "mcon")
+		get_tables.edges.node.__fields__("full_table_id", "mcon", "table_type")
 		get_tables.edges.node.object_properties.__fields__("property_name", "property_value")
 		get_tables.page_info.__fields__(end_cursor=True)
 		get_tables.page_info.__fields__("has_next_page")
 
 		return query
 
-	def get_all_tags_for_warehouse(self, warehouse_id: str) -> list:
+	def get_all_tags_for_warehouse(self, warehouse_id: str, warehouse_name: str = '') -> list:
 		"""Fetch all tags for a specific warehouse.
 
 		Args:
 			warehouse_id (str): UUID of the warehouse.
+			warehouse_name (str): Name of the warehouse (for cross-environment MCON construction).
 
 		Returns:
 			list[dict]: List of tag dictionaries with keys:
 				- warehouse_id (str): UUID of the warehouse
+				- warehouse_name (str): Name of the warehouse
 				- full_table_id (str): Full table identifier (database:schema.table)
 				- mcon (str): Monte Carlo Object Name
+				- asset_type (str): Asset type (table or view)
 				- tag_key (str): Tag property name
 				- tag_value (str): Tag property value
 		"""
@@ -92,11 +97,17 @@ class BulkTagExporterV2(Tables):
 
 			for table in response.edges:
 				if table.node.object_properties and len(table.node.object_properties) > 0:
+					# Determine asset_type from table_type (normalize to 'table' or 'view')
+					table_type = getattr(table.node, 'table_type', 'TABLE') or 'TABLE'
+					asset_type = 'view' if 'VIEW' in table_type.upper() else 'table'
+					
 					for prop in table.node.object_properties:
 						tags.append({
 							'warehouse_id': warehouse_id,
+							'warehouse_name': warehouse_name,
 							'full_table_id': table.node.full_table_id,
 							'mcon': table.node.mcon,
+							'asset_type': asset_type,
 							'tag_key': prop['property_name'],
 							'tag_value': prop['property_value']
 						})
@@ -115,34 +126,48 @@ class BulkTagExporterV2(Tables):
 
 		Args:
 			warehouse_ids (list): Optional list of warehouse UUIDs to filter.
-								  If None, fetches from all warehouses.
+							  If None, fetches from all warehouses.
 
 		Returns:
 			list[dict]: Combined list of all unique tags across warehouses.
 		"""
-		# Get all warehouses if not specified
+		# Get all warehouses with names
+		all_warehouses, raw = self.get_warehouses()
+		
+		# Build warehouse_id -> warehouse_name mapping
+		warehouse_names = {}
+		for acct in raw:
+			for wh in raw[acct].warehouses:
+				warehouse_names[wh.uuid] = wh.name
+		
+		# Filter to specified warehouses if provided
 		if warehouse_ids is None:
-			all_warehouses, _ = self.get_warehouses()
 			warehouse_ids = all_warehouses
 
 		LOGGER.info(f"Fetching tags from {len(warehouse_ids)} warehouse(s)...")
 
 		all_tags = []
 		for wh_id in warehouse_ids:
-			LOGGER.info(f"  Processing warehouse: {wh_id}")
-			warehouse_tags = self.get_all_tags_for_warehouse(wh_id)
+			wh_name = warehouse_names.get(wh_id, '')
+			LOGGER.info(f"  Processing warehouse: {wh_id} ({wh_name})")
+			warehouse_tags = self.get_all_tags_for_warehouse(wh_id, wh_name)
 			LOGGER.info(f"    Found {len(warehouse_tags)} tags")
 			all_tags.extend(warehouse_tags)
 
 		# De-duplicate tags: the API sometimes returns duplicate properties
-		# Key is (full_table_id, tag_key, tag_value) - keep first occurrence
+		# (API may return same property with None and '' as different entries)
+		# Key is (full_table_id, tag_key, normalized_tag_value) - keep first occurrence
 		seen = set()
 		unique_tags = []
 		duplicates = 0
 		for tag in all_tags:
-			key = (tag['full_table_id'], tag['tag_key'], tag['tag_value'])
+			# Normalize None to '' for consistent de-duplication
+			normalized_value = tag['tag_value'] if tag['tag_value'] is not None else ''
+			key = (tag['full_table_id'], tag['tag_key'], normalized_value)
 			if key not in seen:
 				seen.add(key)
+				# Also normalize the tag_value in the output
+				tag['tag_value'] = normalized_value
 				unique_tags.append(tag)
 			else:
 				duplicates += 1
@@ -169,18 +194,20 @@ class BulkTagExporterV2(Tables):
 			# Still write header for consistency
 			with open(output_file, 'w', newline='') as csvfile:
 				writer = csv.writer(csvfile)
-				writer.writerow(['warehouse_id', 'full_table_id', 'tag_key', 'tag_value'])
+				writer.writerow(['warehouse_id', 'warehouse_name', 'full_table_id', 'asset_type', 'tag_key', 'tag_value'])
 			return
 
 		# Write to CSV
 		with open(output_file, 'w', newline='') as csvfile:
 			writer = csv.writer(csvfile)
-			writer.writerow(['warehouse_id', 'full_table_id', 'tag_key', 'tag_value'])
+			writer.writerow(['warehouse_id', 'warehouse_name', 'full_table_id', 'asset_type', 'tag_key', 'tag_value'])
 
 			for tag in tags:
 				writer.writerow([
 					tag['warehouse_id'],
+					tag['warehouse_name'],
 					tag['full_table_id'],
+					tag['asset_type'],
 					tag['tag_key'],
 					tag['tag_value']
 				])

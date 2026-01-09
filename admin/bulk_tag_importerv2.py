@@ -3,15 +3,18 @@
 # 2. Profile should be configured in ~/.mcd/profiles.ini
 #
 # Input CSV format (with header):
-#   warehouse_id,full_table_id,tag_key,tag_value
-#   abc-123-uuid,database:schema.table,owner,team_data
+#   warehouse_id,warehouse_name,full_table_id,asset_type,tag_key,tag_value
+#   abc-123-uuid,my_warehouse,database:schema.table,table,owner,team_data
 #
 # Notes:
-# - warehouse_id: The source warehouse UUID (used for reference/logging)
+# - warehouse_id: The source warehouse UUID (used for same-environment matching)
+# - warehouse_name: The warehouse name (used for cross-environment MCON construction)
 # - full_table_id: Table identifier in format database:schema.table (must be lowercase)
+# - asset_type: Asset type ('table' or 'view') - enables MCON construction without API lookups
 # - tag_key: Tag property name
 # - tag_value: Tag property value
-# - Tags are applied to tables that exist in the target environment
+# - When asset_type and warehouse_name are provided, MCONs are constructed by matching warehouse names
+# - Fallback to API lookup if asset_type is missing (backwards compatible)
 
 import os
 import sys
@@ -49,6 +52,172 @@ class BulkTagImporterV2(Tables):
 		self.progress_bar = progress
 		self._mcon_cache = {}  # Cache for full_table_id -> mcon lookups
 		self._existing_tags = {}  # Cache for (mcon, tag_key) -> tag_value
+		# Caches for MCON construction optimization
+		self._dest_account_uuid = None
+		self._dest_warehouse_by_name = {}  # warehouse_name -> dest_warehouse_uuid
+		self._source_warehouse_names = {}  # source_warehouse_uuid -> warehouse_name
+
+	def _get_destination_account_uuid(self) -> str:
+		"""Get the destination account UUID (cached, 1 API call).
+
+		Returns:
+			str: The destination account UUID.
+		"""
+		if self._dest_account_uuid is None:
+			_, raw = self.get_warehouses()
+			for acct in raw:
+				self._dest_account_uuid = raw[acct].uuid
+				break
+		return self._dest_account_uuid
+
+	def _build_warehouse_name_mapping(self, source_warehouses: dict) -> dict:
+		"""Build mapping from source warehouse UUIDs to destination warehouse UUIDs by name.
+
+		Fetches all destination warehouses and matches by name to source warehouses.
+		Uses warehouse_name from CSV for cross-environment mapping, or falls back to
+		matching by UUID for same-environment cases.
+
+		Args:
+			source_warehouses (dict): Dict of source_warehouse_id -> warehouse_name from CSV.
+
+		Returns:
+			dict: source_warehouse_uuid -> dest_warehouse_uuid mapping
+		"""
+		# Get destination warehouses (this populates _dest_account_uuid as side effect)
+		_, raw = self.get_warehouses()
+
+		# Build name -> dest_uuid lookup for destination warehouses
+		for acct in raw:
+			self._dest_account_uuid = raw[acct].uuid
+			for wh in raw[acct].warehouses:
+				wh_name = wh.name.lower().strip()
+				self._dest_warehouse_by_name[wh_name] = wh.uuid
+
+		# Map source warehouses to destination warehouses by name
+		mapping = {}
+		unmapped = []
+
+		for src_wh_id, src_wh_name in source_warehouses.items():
+			if src_wh_name:
+				# Use warehouse_name from CSV for cross-environment matching
+				wh_name_lower = src_wh_name.lower().strip()
+				if wh_name_lower in self._dest_warehouse_by_name:
+					self._source_warehouse_names[src_wh_id] = wh_name_lower
+					mapping[src_wh_id] = self._dest_warehouse_by_name[wh_name_lower]
+				else:
+					LOGGER.debug(f"Warehouse name '{src_wh_name}' not found in destination")
+					unmapped.append(src_wh_id)
+			else:
+				# No warehouse_name in CSV - try matching by UUID (same environment)
+				# Check if this UUID exists in destination
+				if src_wh_id in self._dest_warehouse_by_name.values():
+					# Find the name for this UUID
+					for name, uuid in self._dest_warehouse_by_name.items():
+						if uuid == src_wh_id:
+							self._source_warehouse_names[src_wh_id] = name
+							mapping[src_wh_id] = uuid
+							break
+				else:
+					unmapped.append(src_wh_id)
+
+		if unmapped:
+			LOGGER.warning(
+				f"Could not map {len(unmapped)} source warehouse(s) to destination. "
+				f"Tags from these warehouses will fall back to API lookup."
+			)
+
+		return mapping
+
+	def _get_destination_warehouse_uuid(self, source_warehouse_id: str) -> str:
+		"""Get the destination warehouse UUID for a source warehouse.
+
+		Args:
+			source_warehouse_id (str): The source warehouse UUID.
+
+		Returns:
+			str: The destination warehouse UUID, or empty string if not found.
+		"""
+		# Check if we have a mapping
+		if source_warehouse_id in self._source_warehouse_names:
+			wh_name = self._source_warehouse_names[source_warehouse_id]
+			return self._dest_warehouse_by_name.get(wh_name, '')
+		return ''
+
+	def construct_mcon(self, source_warehouse_id: str, asset_type: str, full_table_id: str) -> str:
+		"""Construct a destination MCON from components.
+
+		Args:
+			source_warehouse_id (str): The source warehouse UUID (for mapping).
+			asset_type (str): The asset type ('table' or 'view').
+			full_table_id (str): The full table identifier.
+
+		Returns:
+			str: The constructed MCON, or empty string if warehouse mapping failed.
+		"""
+		account = self._get_destination_account_uuid()
+		warehouse = self._get_destination_warehouse_uuid(source_warehouse_id)
+
+		if not account or not warehouse:
+			return ''
+
+		return f"MCON++{account}++{warehouse}++{asset_type}++{full_table_id}"
+
+	def fetch_existing_tags_for_tables(self, tables: list) -> int:
+		"""Fetch existing tags for a list of tables to enable skip/update detection.
+
+		This is needed when MCONs are constructed (not looked up) because the
+		lookup_mcon() method also fetches existing tags, but construct_mcon() doesn't.
+
+		Args:
+			tables (list): List of dicts with 'warehouse_id', 'full_table_id', 'mcon' keys.
+
+		Returns:
+			int: Number of tables for which tags were fetched.
+		"""
+		fetched = 0
+		for table in tables:
+			warehouse_id = table.get('warehouse_id', '')
+			full_table_id = table.get('full_table_id', '')
+			mcon = table.get('mcon', '')
+
+			if not warehouse_id or not full_table_id or not mcon:
+				continue
+
+			# Check if we already have tags cached for this MCON
+			# (from a previous lookup_mcon call)
+			has_cached_tags = any(k[0] == mcon for k in self._existing_tags.keys())
+			if has_cached_tags:
+				continue
+
+			try:
+				# Query the table to get existing tags
+				query = Query()
+				get_tables = query.get_tables(
+					dw_id=warehouse_id,
+					search=full_table_id,
+					first=10,
+					is_deleted=False
+				)
+				get_tables.edges.node.__fields__("full_table_id", "mcon")
+				get_tables.edges.node.object_properties.__fields__("property_name", "property_value")
+
+				response = self.auth.client(query).get_tables
+
+				if response and response.edges:
+					for edge in response.edges:
+						if edge.node.full_table_id.lower() == full_table_id.lower():
+							# Cache existing tags for this table
+							if edge.node.object_properties:
+								for prop in edge.node.object_properties:
+									tag_key = (mcon, prop['property_name'])
+									self._existing_tags[tag_key] = prop['property_value']
+							fetched += 1
+							break
+
+			except Exception as e:
+				LOGGER.debug(f"Error fetching existing tags for {full_table_id}: {e}")
+
+		return fetched
 
 	def parse_tag_csv(self, input_file: str) -> dict:
 		"""Parse a tag CSV file and return organized data.
@@ -117,6 +286,8 @@ class BulkTagImporterV2(Tables):
 					tag_key = row.get('tag_key', '').strip()
 					tag_value = row.get('tag_value', '').strip()
 					warehouse_id = row.get('warehouse_id', '').strip()
+					warehouse_name = row.get('warehouse_name', '').strip()
+					asset_type = row.get('asset_type', '').strip().lower()
 
 					if not full_table_id:
 						errors.append(f"Row {row_num}: Empty full_table_id")
@@ -128,7 +299,9 @@ class BulkTagImporterV2(Tables):
 
 					tags.append({
 						'warehouse_id': warehouse_id,
+						'warehouse_name': warehouse_name,  # For cross-environment MCON construction
 						'full_table_id': full_table_id.lower(),  # Normalize to lowercase
+						'asset_type': asset_type,  # 'table' or 'view', or empty for legacy CSVs
 						'tag_key': tag_key,
 						'tag_value': tag_value
 					})
@@ -331,25 +504,84 @@ class BulkTagImporterV2(Tables):
 		tags_data = parse_result['tags']
 		LOGGER.info(f"Found {len(tags_data)} tags in input file")
 
-		# Get unique (warehouse_id, full_table_id) pairs for targeted lookups
-		unique_tables = set()
-		for tag in tags_data:
-			if tag.get('warehouse_id') and tag.get('full_table_id'):
-				unique_tables.add((tag['warehouse_id'], tag['full_table_id'].lower()))
+		# Check if we can use MCON construction (when asset_type is available)
+		tags_with_asset_type = [t for t in tags_data if t.get('asset_type')]
+		tags_without_asset_type = [t for t in tags_data if not t.get('asset_type')]
 
-		LOGGER.info(f"Looking up MCONs for {len(unique_tables)} unique tables...")
+		if tags_with_asset_type:
+			LOGGER.info(f"Found {len(tags_with_asset_type)} tags with asset_type (can construct MCONs)")
 
-		# Targeted lookup: query only the tables we need
-		tables_found = 0
-		tables_not_found = 0
-		for warehouse_id, full_table_id in unique_tables:
-			mcon = self.lookup_mcon(warehouse_id, full_table_id)
-			if mcon:
-				tables_found += 1
-			else:
-				tables_not_found += 1
+			# Get unique source warehouses with their names for mapping
+			source_warehouses = {}
+			for t in tags_with_asset_type:
+				if t.get('warehouse_id'):
+					# Use the first warehouse_name we find for each warehouse_id
+					if t['warehouse_id'] not in source_warehouses:
+						source_warehouses[t['warehouse_id']] = t.get('warehouse_name', '')
 
-		LOGGER.info(f"Resolved {tables_found} tables ({tables_not_found} not found)")
+			# Build warehouse name mapping (1 API call to get_warehouses)
+			LOGGER.info(f"Building warehouse name mapping for {len(source_warehouses)} source warehouse(s)...")
+			self._build_warehouse_name_mapping(source_warehouses)
+
+			# Construct MCONs for tags with asset_type
+			mcons_constructed = 0
+			mcons_failed = 0
+			for tag in tags_with_asset_type:
+				cache_key = (tag['warehouse_id'], tag['full_table_id'])
+				mcon = self.construct_mcon(tag['warehouse_id'], tag['asset_type'], tag['full_table_id'])
+				if mcon:
+					self._mcon_cache[cache_key] = mcon
+					mcons_constructed += 1
+				else:
+					# Fallback: add to lookup list
+					tags_without_asset_type.append(tag)
+					mcons_failed += 1
+
+			LOGGER.info(f"Constructed {mcons_constructed} MCONs ({mcons_failed} will fall back to lookup)")
+
+			# Fetch existing tags for constructed MCONs (needed for skip/update detection)
+			# Build list of unique tables with constructed MCONs
+			unique_tables_with_mcons = []
+			seen_tables = set()
+			for tag in tags_with_asset_type:
+				cache_key = (tag['warehouse_id'], tag['full_table_id'])
+				if cache_key in self._mcon_cache and cache_key not in seen_tables:
+					seen_tables.add(cache_key)
+					unique_tables_with_mcons.append({
+						'warehouse_id': tag['warehouse_id'],
+						'full_table_id': tag['full_table_id'],
+						'mcon': self._mcon_cache[cache_key]
+					})
+
+			if unique_tables_with_mcons:
+				LOGGER.info(f"Fetching existing tags for {len(unique_tables_with_mcons)} tables...")
+				fetched = self.fetch_existing_tags_for_tables(unique_tables_with_mcons)
+				LOGGER.info(f"Fetched existing tags for {fetched} tables")
+
+		# Fallback: API lookup for tags without asset_type or failed construction
+		if tags_without_asset_type:
+			unique_tables_to_lookup = set()
+			for tag in tags_without_asset_type:
+				if tag.get('warehouse_id') and tag.get('full_table_id'):
+					cache_key = (tag['warehouse_id'], tag['full_table_id'])
+					if cache_key not in self._mcon_cache:
+						unique_tables_to_lookup.add(cache_key)
+
+			if unique_tables_to_lookup:
+				LOGGER.info(f"Looking up MCONs for {len(unique_tables_to_lookup)} tables via API...")
+
+				tables_found = 0
+				tables_not_found = 0
+				for warehouse_id, full_table_id in unique_tables_to_lookup:
+					mcon = self.lookup_mcon(warehouse_id, full_table_id)
+					if mcon:
+						tables_found += 1
+					else:
+						tables_not_found += 1
+
+				LOGGER.info(f"Resolved {tables_found} tables ({tables_not_found} not found)")
+		else:
+			LOGGER.info("All MCONs constructed from CSV data, no API lookups needed")
 
 		# Process tags
 		created = 0
@@ -519,10 +751,16 @@ def main(*args, **kwargs):
 	@sdk_helpers.ensure_progress
 	def run_utility(progress, util, args):
 		util.progress_bar = progress
-		result = util.import_tags(args.input_file, dry_run=False)
+		# Default to dry-run mode (safe), require --force yes to apply changes
+		force = getattr(args, 'force', None)
+		dry_run = force != 'yes'
+		result = util.import_tags(args.input_file, dry_run=dry_run)
 		if not result['success']:
 			for error in result['errors']:
 				LOGGER.error(error)
+		elif dry_run:
+			LOGGER.info("")
+			LOGGER.info("This was a DRY-RUN. No changes were made. Use --force yes to apply changes.")
 
 	util = BulkTagImporterV2(args.profile)
 	run_utility(util, args)
