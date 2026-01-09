@@ -29,7 +29,10 @@ class TagMigrator(BaseMigrator):
 	Delegates core operations to admin bulk scripts.
 
 	CSV Format:
-		warehouse_id,full_table_id,tag_key,tag_value
+		warehouse_id,warehouse_name,full_table_id,asset_type,tag_key,tag_value
+
+	The warehouse_name and asset_type columns enable MCON construction in the
+	destination environment, reducing API calls from N (per table) to 1 (per warehouse).
 	"""
 
 	def __init__(self, profile: str, config_file: str = None, progress: Progress = None):
@@ -83,18 +86,21 @@ class TagMigrator(BaseMigrator):
 				# Still write header for consistency
 				with open(output_path, 'w', newline='') as csvfile:
 					writer = csv.writer(csvfile)
-					writer.writerow(['warehouse_id', 'full_table_id', 'tag_key', 'tag_value'])
+					writer.writerow(['warehouse_id', 'warehouse_name', 'full_table_id', 'asset_type', 'tag_key', 'tag_value'])
 				return self.create_result(success=True, count=0, file=str(output_path))
 
 			# Write to CSV in migration format (with header)
+			# Includes warehouse_name and asset_type for MCON construction optimization
 			with open(output_path, 'w', newline='') as csvfile:
 				writer = csv.writer(csvfile)
-				writer.writerow(['warehouse_id', 'full_table_id', 'tag_key', 'tag_value'])
+				writer.writerow(['warehouse_id', 'warehouse_name', 'full_table_id', 'asset_type', 'tag_key', 'tag_value'])
 
 				for tag in tags_data:
 					writer.writerow([
 						tag['warehouse_id'],
+						tag['warehouse_name'],
 						tag['full_table_id'],
+						tag['asset_type'],
 						tag['tag_key'],
 						tag['tag_value']
 					])
@@ -153,7 +159,7 @@ class TagMigrator(BaseMigrator):
 				success=import_result['success'],
 				dry_run=dry_run,
 				created=import_result['created'],
-				updated=0,  # Tags don't distinguish between create/update
+				updated=import_result.get('updated', 0),
 				skipped=import_result['skipped'],
 				failed=import_result['failed'],
 				errors=import_result.get('errors', [])

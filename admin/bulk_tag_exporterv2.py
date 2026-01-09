@@ -63,7 +63,7 @@ class BulkTagExporterV2(Tables):
 			is_deleted=False,
 			**(dict(after=after) if after else {})
 		)
-		get_tables.edges.node.__fields__("full_table_id", "mcon", "table_type")
+		get_tables.edges.node.__fields__("full_table_id", "table_type")
 		get_tables.edges.node.object_properties.__fields__("property_name", "property_value")
 		get_tables.page_info.__fields__(end_cursor=True)
 		get_tables.page_info.__fields__("has_next_page")
@@ -106,7 +106,6 @@ class BulkTagExporterV2(Tables):
 							'warehouse_id': warehouse_id,
 							'warehouse_name': warehouse_name,
 							'full_table_id': table.node.full_table_id,
-							'mcon': table.node.mcon,
 							'asset_type': asset_type,
 							'tag_key': prop['property_name'],
 							'tag_value': prop['property_value']

@@ -394,52 +394,6 @@ class BulkTagImporterV2(Tables):
 			LOGGER.error(f"Error looking up MCON for {full_table_id}: {e}")
 			return ''
 
-	def get_mcon_mapping_for_warehouse(self, warehouse_id: str) -> dict:
-		"""Get full_table_id -> mcon mapping for a warehouse.
-
-		Args:
-			warehouse_id (str): UUID of the warehouse.
-
-		Returns:
-			dict: full_table_id (lowercase) -> mcon mapping
-		"""
-		mcon_map = {}
-		cursor = None
-
-		while True:
-			response = self.auth.client(
-				self.get_tables(dw_id=warehouse_id, after=cursor)
-			).get_tables
-
-			for table in response.edges:
-				# Store with lowercase key for case-insensitive matching
-				mcon_map[table.node.full_table_id.lower()] = table.node.mcon
-
-			if response.page_info.has_next_page:
-				cursor = response.page_info.end_cursor
-			else:
-				break
-
-		return mcon_map
-
-	def get_mcon_mapping_all_warehouses(self) -> dict:
-		"""Get full_table_id -> mcon mapping for all warehouses.
-
-		Returns:
-			dict: full_table_id (lowercase) -> mcon mapping
-		"""
-		all_warehouses, _ = self.get_warehouses()
-		LOGGER.info(f"Building MCON mapping for {len(all_warehouses)} warehouse(s)...")
-
-		mcon_map = {}
-		for wh_id in all_warehouses:
-			LOGGER.debug(f"  Processing warehouse: {wh_id}")
-			warehouse_map = self.get_mcon_mapping_for_warehouse(wh_id)
-			mcon_map.update(warehouse_map)
-
-		LOGGER.info(f"Built mapping for {len(mcon_map)} tables")
-		return mcon_map
-
 	def import_tag_batch(self, tags: list) -> dict:
 		"""Import a batch of tags (max 99 at a time).
 
