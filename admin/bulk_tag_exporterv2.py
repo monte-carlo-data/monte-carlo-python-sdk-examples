@@ -184,6 +184,9 @@ class BulkTagExporterV2(Tables):
 			output_file (str): Path to output CSV file.
 			warehouse_id (str): Optional warehouse UUID to filter. If None, exports all.
 		"""
+		from pathlib import Path
+		from lib.helpers.warehouse_mapping import WarehouseMappingLoader
+
 		# Fetch tags
 		warehouse_ids = [warehouse_id] if warehouse_id else None
 		tags = self.get_all_tags(warehouse_ids)
@@ -212,6 +215,16 @@ class BulkTagExporterV2(Tables):
 				])
 
 		LOGGER.info(f"Export complete: {output_file} ({len(tags)} rows)")
+
+		# Generate warehouse mapping template for cross-environment migrations
+		source_warehouses = {}
+		for tag in tags:
+			if tag.get('warehouse_id') and tag.get('warehouse_name'):
+				source_warehouses[tag['warehouse_id']] = tag['warehouse_name']
+
+		if source_warehouses:
+			output_dir = str(Path(output_file).parent)
+			WarehouseMappingLoader.generate_template(source_warehouses, output_dir)
 
 
 def main(*args, **kwargs):

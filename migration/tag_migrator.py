@@ -110,6 +110,16 @@ class TagMigrator(BaseMigrator):
 			# Count unique tables for summary
 			unique_tables = len(set(tag['full_table_id'] for tag in tags_data))
 
+			# Generate warehouse mapping template for cross-environment migrations
+			from lib.helpers.warehouse_mapping import WarehouseMappingLoader
+			source_warehouses = {}
+			for tag in tags_data:
+				if tag.get('warehouse_id') and tag.get('warehouse_name'):
+					source_warehouses[tag['warehouse_id']] = tag['warehouse_name']
+
+			if source_warehouses:
+				WarehouseMappingLoader.generate_template(source_warehouses, str(output_path.parent))
+
 			result = self.create_result(
 				success=True,
 				count=len(tags_data),
