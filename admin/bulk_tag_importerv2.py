@@ -70,61 +70,88 @@ class BulkTagImporterV2(Tables):
 				break
 		return self._dest_account_uuid
 
-	def _build_warehouse_name_mapping(self, source_warehouses: dict) -> dict:
-		"""Build mapping from source warehouse UUIDs to destination warehouse UUIDs by name.
+	def _build_warehouse_name_mapping(
+		self,
+		source_warehouses: dict,
+		explicit_mapping: dict = None
+	) -> dict:
+		"""Build mapping from source warehouse UUIDs to destination warehouse UUIDs.
 
-		Fetches all destination warehouses and matches by name to source warehouses.
-		Uses warehouse_name from CSV for cross-environment mapping, or falls back to
-		matching by UUID for same-environment cases.
+		Uses explicit mapping provided by user (CLI or config file). No automatic
+		fallback to same-name or UUID matching - all mappings must be explicit.
 
 		Args:
 			source_warehouses (dict): Dict of source_warehouse_id -> warehouse_name from CSV.
+			explicit_mapping (dict): Dict of source_warehouse_name -> dest_warehouse_name.
+								   If None, no mappings will be created.
 
 		Returns:
 			dict: source_warehouse_uuid -> dest_warehouse_uuid mapping
 		"""
+		if not explicit_mapping:
+			LOGGER.warning(
+				"No warehouse mapping provided. Use --warehouse_map or create "
+				"warehouse_mapping.json. Tags will be skipped."
+			)
+			return {}
+
 		# Get destination warehouses (this populates _dest_account_uuid as side effect)
 		_, raw = self.get_warehouses()
 
 		# Build name -> dest_uuid lookup for destination warehouses
+		dest_name_to_uuid = {}
 		for acct in raw:
 			self._dest_account_uuid = raw[acct].uuid
 			for wh in raw[acct].warehouses:
-				wh_name = wh.name.lower().strip()
-				self._dest_warehouse_by_name[wh_name] = wh.uuid
+				wh_name_lower = wh.name.lower().strip()
+				dest_name_to_uuid[wh_name_lower] = wh.uuid
 
-		# Map source warehouses to destination warehouses by name
+		# Log available destination warehouses for debugging
+		LOGGER.debug(f"Available destination warehouses: {list(dest_name_to_uuid.keys())}")
+
+		# Map source warehouses using explicit mapping
 		mapping = {}
+		mapped = []
 		unmapped = []
+		invalid_dest = []
 
 		for src_wh_id, src_wh_name in source_warehouses.items():
-			if src_wh_name:
-				# Use warehouse_name from CSV for cross-environment matching
-				wh_name_lower = src_wh_name.lower().strip()
-				if wh_name_lower in self._dest_warehouse_by_name:
-					self._source_warehouse_names[src_wh_id] = wh_name_lower
-					mapping[src_wh_id] = self._dest_warehouse_by_name[wh_name_lower]
-				else:
-					LOGGER.debug(f"Warehouse name '{src_wh_name}' not found in destination")
-					unmapped.append(src_wh_id)
-			else:
-				# No warehouse_name in CSV - try matching by UUID (same environment)
-				# Check if this UUID exists in destination
-				if src_wh_id in self._dest_warehouse_by_name.values():
-					# Find the name for this UUID
-					for name, uuid in self._dest_warehouse_by_name.items():
-						if uuid == src_wh_id:
-							self._source_warehouse_names[src_wh_id] = name
-							mapping[src_wh_id] = uuid
-							break
-				else:
-					unmapped.append(src_wh_id)
+			if not src_wh_name:
+				unmapped.append(f"(id: {src_wh_id[:8]}...)")
+				continue
+
+			# Look up in explicit mapping (case-sensitive for source name)
+			dest_wh_name = explicit_mapping.get(src_wh_name)
+
+			if not dest_wh_name:
+				unmapped.append(src_wh_name)
+				continue
+
+			# Validate destination warehouse exists (case-insensitive)
+			dest_wh_name_lower = dest_wh_name.lower().strip()
+			if dest_wh_name_lower not in dest_name_to_uuid:
+				invalid_dest.append(f"{src_wh_name} → {dest_wh_name}")
+				continue
+
+			# Store mapping
+			self._source_warehouse_names[src_wh_id] = dest_wh_name_lower
+			self._dest_warehouse_by_name[dest_wh_name_lower] = dest_name_to_uuid[dest_wh_name_lower]
+			mapping[src_wh_id] = dest_name_to_uuid[dest_wh_name_lower]
+			mapped.append(f"{src_wh_name} → {dest_wh_name}")
+
+		# Log mapping status
+		if mapped:
+			LOGGER.info("Warehouse Mapping:")
+			for m in mapped:
+				LOGGER.info(f"  ✓ {m}")
 
 		if unmapped:
-			LOGGER.warning(
-				f"Could not map {len(unmapped)} source warehouse(s) to destination. "
-				f"Tags from these warehouses will fall back to API lookup."
-			)
+			LOGGER.warning(f"No mapping defined for {len(unmapped)} warehouse(s): {unmapped}")
+			LOGGER.warning("Tags from unmapped warehouses will be skipped.")
+
+		if invalid_dest:
+			LOGGER.error(f"Destination warehouse not found for: {invalid_dest}")
+			LOGGER.error("Check that destination warehouse names are correct.")
 
 		return mapping
 
@@ -430,18 +457,35 @@ class BulkTagImporterV2(Tables):
 				'error': str(e)
 			}
 
-	def import_tags(self, input_file: str = None, dry_run: bool = True) -> dict:
+	def import_tags(
+		self,
+		input_file: str = None,
+		dry_run: bool = True,
+		warehouse_mapping: dict = None
+	) -> dict:
 		"""Import tags from CSV file with batching.
 
 		Args:
 			input_file (str): Path to CSV file.
 			dry_run (bool): If True, preview changes without committing.
+			warehouse_mapping (dict): Source warehouse name -> destination warehouse name mapping.
+								    Required for cross-environment migrations.
+								    If None, looks for warehouse_mapping.json in input directory.
 
 		Returns:
 			dict: Result with created, skipped, failed counts
 		"""
 		mode = "DRY-RUN" if dry_run else "COMMIT"
 		LOGGER.info(f"Starting tag import ({mode})...")
+
+		# Load warehouse mapping from file if not provided via CLI
+		if warehouse_mapping is None and input_file:
+			from pathlib import Path
+			from lib.helpers.warehouse_mapping import WarehouseMappingLoader
+			input_dir = str(Path(input_file).parent)
+			warehouse_mapping = WarehouseMappingLoader.load_from_file(input_dir)
+			if warehouse_mapping:
+				LOGGER.info(f"Loaded warehouse mapping from {WarehouseMappingLoader.MAPPING_FILENAME}")
 
 		# Parse input file
 		parse_result = self.parse_tag_csv(input_file)
@@ -475,7 +519,7 @@ class BulkTagImporterV2(Tables):
 
 			# Build warehouse name mapping (1 API call to get_warehouses)
 			LOGGER.info(f"Building warehouse name mapping for {len(source_warehouses)} source warehouse(s)...")
-			self._build_warehouse_name_mapping(source_warehouses)
+			self._build_warehouse_name_mapping(source_warehouses, explicit_mapping=warehouse_mapping)
 
 			# Construct MCONs for tags with asset_type
 			mcons_constructed = 0
