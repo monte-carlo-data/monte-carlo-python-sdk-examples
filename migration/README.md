@@ -73,13 +73,65 @@ Import from a custom directory:
 python migration/workspace_migrator.py import --profile target_env --input_dir ./my-exports --force yes
 ```
 
+## Cross-Environment Tag Migrations
+
+When migrating tags between different environments (e.g., dev → prod), warehouse names typically differ. The migration module provides two ways to map source warehouses to destination warehouses:
+
+### Option 1: CLI Argument
+
+Provide mappings directly in the command:
+
+```bash
+python migration/workspace_migrator.py import --entities tags \
+  --profile target_env \
+  --warehouse_map "Dev Snowflake=Prod Snowflake,Dev BigQuery=Prod BigQuery" \
+  --force yes
+```
+
+### Option 2: Configuration File
+
+1. **Export** generates a template file (`warehouse_mapping_template.json`):
+
+```json
+{
+  "_instructions": "Replace <ENTER_DESTINATION_WAREHOUSE> with the actual warehouse name...",
+  "warehouse_mapping": {
+    "Dev Snowflake": "<ENTER_DESTINATION_WAREHOUSE>",
+    "Dev BigQuery": "<ENTER_DESTINATION_WAREHOUSE>"
+  }
+}
+```
+
+2. **Copy and edit** the template to create `warehouse_mapping.json`:
+
+```json
+{
+  "warehouse_mapping": {
+    "Dev Snowflake": "Prod Snowflake",
+    "Dev BigQuery": "Prod BigQuery"
+  }
+}
+```
+
+3. **Import** will automatically use the mapping file:
+
+```bash
+python migration/workspace_migrator.py import --entities tags --profile target_env --force yes
+```
+
+### Mapping Priority
+
+1. CLI `--warehouse_map` argument (highest priority)
+2. `warehouse_mapping.json` file in input directory
+3. No fallback—unmapped warehouses are skipped with a warning
+
 ## Supported Entities
 
 | Entity | Status | CSV Columns |
 |--------|--------|-------------|
 | `blocklists` | ✅ Implemented | `resource_id`, `target_object_type`, `match_type`, `dataset`, `project`, `effect` |
 | `domains` | ✅ Implemented | `domain_name`, `domain_description`, `asset_mcon` |
-| `tags` | ✅ Implemented | `warehouse_id`, `full_table_id`, `tag_key`, `tag_value` |
+| `tags` | ✅ Implemented | `warehouse_id`, `warehouse_name`, `full_table_id`, `asset_type`, `tag_key`, `tag_value` |
 | `exclusion_windows` | ✅ Implemented | `id`, `resource_uuid`, `scope`, `database`, `dataset`, `full_table_id`, `start_time`, `end_time`, `reason`, `reason_type` |
 | `data_products` | ✅ Implemented | `data_product_name`, `data_product_description`, `asset_mcon` |
 
@@ -87,7 +139,20 @@ Entities are imported in dependency order: blocklists → domains → tags → e
 
 ## Output Files
 
-Exports are saved to `migration/migration-data-exports/` by default (or a custom directory). A manifest file tracks export metadata:
+Exports are saved to `migration/migration-data-exports/` by default (or a custom directory):
+
+```
+migration/migration-data-exports/
+├── blocklists.csv
+├── domains.csv
+├── tags.csv
+├── exclusion_windows.csv
+├── data_products.csv
+├── warehouse_mapping_template.json   # Template for tag warehouse mappings
+└── migration_manifest.json           # Export metadata
+```
+
+The manifest file tracks export metadata:
 
 ```json
 {
@@ -125,6 +190,7 @@ mcd_token = target_token
 - **`lib/auth/mc_auth.py`**: Handles Monte Carlo authentication
 - **`lib/helpers/logs.py`**: Provides `LOGGER` and logging configuration
 - **`lib/helpers/sdk_helpers.py`**: Argument parser generation utilities
+- **`lib/helpers/warehouse_mapping.py`**: Warehouse mapping utilities for cross-environment tag migrations
 
 ### Admin Scripts (`admin/`)
 
