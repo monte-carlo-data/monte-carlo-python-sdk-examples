@@ -201,13 +201,21 @@ class WorkspaceMigrator(Util):
 		LOGGER.info("Export complete!")
 		self._log_summary(results)
 
-	def run_import(self, entities: list = None, input_dir: str = None, dry_run: bool = True):
+	def run_import(
+		self,
+		entities: list = None,
+		input_dir: str = None,
+		dry_run: bool = True,
+		warehouse_mapping: dict = None
+	):
 		"""Run import for specified entities.
 
 		Args:
 			entities (list): List of entity types to import. Imports all if None.
 			input_dir (str): Directory containing import files. Uses default if None.
 			dry_run (bool): If True, preview changes without committing.
+			warehouse_mapping (dict): Warehouse name mapping for tag migrations.
+								    Source name -> destination name.
 		"""
 		self._ensure_workspace_migrator_log_handler()
 
@@ -239,7 +247,11 @@ class WorkspaceMigrator(Util):
 
 			LOGGER.info(f"Importing [{entity}] ({mode})...")
 			try:
-				result = migrator.import_data(dry_run=dry_run)
+				# Pass warehouse_mapping only to tag migrator
+				if entity == 'tags' and warehouse_mapping:
+					result = migrator.import_data(dry_run=dry_run, warehouse_mapping=warehouse_mapping)
+				else:
+					result = migrator.import_data(dry_run=dry_run)
 				results[entity] = result
 
 				if result.get('success'):
@@ -416,7 +428,17 @@ def main(*args, **kwargs):
 			input_dir = getattr(args, 'input_dir', None)
 			force = getattr(args, 'force', None)
 			dry_run = force != 'yes'
-			util.run_import(entities, input_dir=input_dir, dry_run=dry_run)
+
+			# Parse warehouse mapping from CLI if provided
+			warehouse_map_arg = getattr(args, 'warehouse_map', None)
+			warehouse_mapping = None
+			if warehouse_map_arg:
+				from lib.helpers.warehouse_mapping import WarehouseMappingLoader
+				warehouse_mapping = WarehouseMappingLoader.parse_cli_mapping(warehouse_map_arg)
+				if warehouse_mapping:
+					LOGGER.info(f"Using warehouse mapping from CLI: {len(warehouse_mapping)} mapping(s)")
+
+			util.run_import(entities, input_dir=input_dir, dry_run=dry_run, warehouse_mapping=warehouse_mapping)
 
 		elif command == 'validate':
 			input_dir = getattr(args, 'input_dir', None)

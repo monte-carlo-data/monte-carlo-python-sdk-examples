@@ -752,7 +752,17 @@ def main(*args, **kwargs):
 		# Default to dry-run mode (safe), require --force yes to apply changes
 		force = getattr(args, 'force', None)
 		dry_run = force != 'yes'
-		result = util.import_tags(args.input_file, dry_run=dry_run)
+
+		# Parse warehouse mapping from CLI if provided
+		warehouse_map_arg = getattr(args, 'warehouse_map', None)
+		warehouse_mapping = None
+		if warehouse_map_arg:
+			from lib.helpers.warehouse_mapping import WarehouseMappingLoader
+			warehouse_mapping = WarehouseMappingLoader.parse_cli_mapping(warehouse_map_arg)
+			if warehouse_mapping:
+				LOGGER.info(f"Using warehouse mapping from CLI: {len(warehouse_mapping)} mapping(s)")
+
+		result = util.import_tags(args.input_file, dry_run=dry_run, warehouse_mapping=warehouse_mapping)
 		if not result['success']:
 			for error in result['errors']:
 				LOGGER.error(error)

@@ -123,12 +123,19 @@ class TagMigrator(BaseMigrator):
 			LOGGER.error(f"[{self.entity_name}] Export failed: {e}")
 			return self.create_result(success=False, count=0, errors=[str(e)])
 
-	def import_data(self, input_file: str = None, dry_run: bool = True) -> dict:
+	def import_data(
+		self,
+		input_file: str = None,
+		dry_run: bool = True,
+		warehouse_mapping: dict = None
+	) -> dict:
 		"""Import tags from CSV.
 
 		Args:
 			input_file (str): Path to input file. Uses default if not provided.
 			dry_run (bool): If True, preview changes without committing.
+			warehouse_mapping (dict): Source warehouse name -> destination warehouse name mapping.
+								    Required for cross-environment migrations.
 
 		Returns:
 			dict: Import result with success, created, updated, skipped, failed, errors.
@@ -151,7 +158,11 @@ class TagMigrator(BaseMigrator):
 				)
 
 			# Delegate to admin importer
-			import_result = self._importer.import_tags(str(input_path), dry_run=dry_run)
+			import_result = self._importer.import_tags(
+				str(input_path),
+				dry_run=dry_run,
+				warehouse_mapping=warehouse_mapping
+			)
 
 			self.update_progress(50)
 

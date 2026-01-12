@@ -130,7 +130,7 @@
               }
           },
         "bulk_tag_importerv2.py": {
-              "description": "\n\nImports object tags (properties) from a CSV file (exported from bulk_tag_exporterv2.py). Creates or updates tags on tables in the target environment. When asset_type and warehouse_name are provided in the CSV, MCONs are constructed without API lookups (optimized mode). Runs in DRY-RUN mode by default.",
+              "description": "\n\nImports object tags (properties) from a CSV file (exported from bulk_tag_exporterv2.py). Creates or updates tags on tables in the target environment. When asset_type and warehouse_name are provided in the CSV, MCONs are constructed without API lookups (optimized mode). Runs in DRY-RUN mode by default.\n\nFor cross-environment migrations, provide warehouse mapping via --warehouse_map or create warehouse_mapping.json in the input directory.",
               "arguments": {
                   "profile": {
                       "default": "default",
@@ -140,6 +140,10 @@
                   "input_file": {
                     "required": true,
                     "help": "Path to CSV file from bulk_tag_exporterv2.py.\n\nExpected format (with header):\nwarehouse_id,warehouse_name,full_table_id,asset_type,tag_key,tag_value\nabc-123-uuid,my_warehouse,database:schema.table,table,owner,team_data"
+                  },
+                  "warehouse_map": {
+                    "required": false,
+                    "help": "Warehouse name mapping for cross-environment migrations.\n\nFormat: 'SourceName1=DestName1,SourceName2=DestName2'\n\nExample: --warehouse_map 'Dev Snowflake=Prod Snowflake,Dev BQ=Prod BQ'\n\nAlternatively, create warehouse_mapping.json in the input directory."
                   },
                   "force": {
                     "required": false,
@@ -518,6 +522,10 @@
 						"input_dir": {
 							"required": false,
 							"help": "Directory containing import files. Defaults to migration/migration-data-exports/"
+						},
+						"warehouse_map": {
+							"required": false,
+							"help": "Warehouse name mapping for tag migrations: 'Source1=Dest1,Source2=Dest2'. Or create warehouse_mapping.json in input_dir."
 						},
 						"force": {
 							"required": false,
