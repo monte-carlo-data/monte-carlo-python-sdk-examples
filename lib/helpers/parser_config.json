@@ -395,6 +395,80 @@
 				}
 			}
 		},
+		"bulk_export_monitors_v2.py": {
+			"description": "\nMigration-compatible monitor exporter. Exports UI monitors to YAML file with structured result output and warehouse mapping support for cross-environment migrations.\n\nUsed by the migration framework (MonitorMigrator) or standalone.",
+			"arguments": {
+				"profile": {
+					"default": "default",
+					"required": false,
+					"help": "Specify an MCD profile name. Uses default otherwise."
+				},
+				"output_file": {
+					"required": true,
+					"help": "Path to output YAML file.\n\nOutput format: MaC YAML (montecarlo: ...)"
+				},
+				"export_name": {
+					"required": false,
+					"default": "y",
+					"help": "Include monitor names in the export? Default 'y' for migration compatibility (enables UPDATE vs DELETE+CREATE on re-import).",
+					"choices": ["y", "n"]
+				}
+			}
+		},
+		"bulk_import_monitors.py": {
+			"description": "\nMigration-compatible monitor importer. Imports monitors from YAML file using montecarlo CLI. Supports warehouse mapping, name deduplication, and namespace-based organization.\n\nUsed by the migration framework (MonitorMigrator) or standalone.",
+			"subparsers": {
+				"import": {
+					"description": "Import monitors from YAML file.",
+					"help": "Import monitors from YAML file.",
+					"arguments": {
+						"profile": {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"input_file": {
+							"required": true,
+							"help": "Path to YAML file containing monitor definitions."
+						},
+						"namespace": {
+							"required": false,
+							"default": "migration",
+							"help": "Namespace for imported monitors. Default: 'migration'"
+						},
+						"warehouse_map": {
+							"required": false,
+							"help": "Warehouse name mapping: 'Source1=Dest1,Source2=Dest2'"
+						},
+						"force": {
+							"required": false,
+							"choices": ["yes", "no"],
+							"help": "Set to 'yes' to commit changes. Default is dry-run."
+						}
+					}
+				},
+				"delete": {
+					"description": "Delete all monitors in a namespace (for rollback).",
+					"help": "Delete monitors by namespace.",
+					"arguments": {
+						"profile": {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"namespace": {
+							"required": true,
+							"help": "Namespace to delete monitors from."
+						},
+						"force": {
+							"required": false,
+							"choices": ["yes", "no"],
+							"help": "Set to 'yes' to commit deletion. Default is dry-run."
+						}
+					}
+				}
+			}
+		},
 		"deduplicate_metric_monitors.py": {
 			"description": "\nFinds and removes duplicate metric monitors from an input YML file.",
 			"arguments": {
