@@ -41,6 +41,7 @@ from migration.domain_migrator import DomainMigrator
 from migration.data_product_migrator import DataProductMigrator
 from migration.tag_migrator import TagMigrator
 from migration.exclusion_window_migrator import ExclusionWindowMigrator
+from migration.monitor_migrator import MonitorMigrator
 
 # Initialize logger
 util_name = os.path.basename(__file__).split('.')[0]
@@ -50,10 +51,10 @@ logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
 WORKSPACE_MIGRATOR_LOG = LOGS_DIR / f"{util_name}-{datetime.date.today()}.log"
 
 # Available entity types and their import order (dependencies first)
-# Note: Some entities are placeholders for future implementation
-AVAILABLE_ENTITIES = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products']
-IMPLEMENTED_ENTITIES = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products']  # Currently implemented
-IMPORT_ORDER = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products']  # Dependency order
+# Note: Monitors are imported last as they may reference other entities (e.g., tags for table monitors)
+AVAILABLE_ENTITIES = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products', 'monitors']
+IMPLEMENTED_ENTITIES = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products', 'monitors']
+IMPORT_ORDER = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products', 'monitors']  # Dependency order
 
 
 class WorkspaceMigrator(Util):
@@ -85,6 +86,7 @@ class WorkspaceMigrator(Util):
 				'tags': TagMigrator(self.profile, progress=self.progress_bar),
 				'exclusion_windows': ExclusionWindowMigrator(self.profile, progress=self.progress_bar),
 				'data_products': DataProductMigrator(self.profile, progress=self.progress_bar),
+				'monitors': MonitorMigrator(self.profile, progress=self.progress_bar),
 			}
 		return self._migrators
 
@@ -247,8 +249,8 @@ class WorkspaceMigrator(Util):
 
 			LOGGER.info(f"Importing [{entity}] ({mode})...")
 			try:
-				# Pass warehouse_mapping only to tag migrator
-				if entity == 'tags' and warehouse_mapping:
+				# Pass warehouse_mapping to migrators that support it
+				if entity in ('tags', 'monitors') and warehouse_mapping:
 					result = migrator.import_data(dry_run=dry_run, warehouse_mapping=warehouse_mapping)
 				else:
 					result = migrator.import_data(dry_run=dry_run)

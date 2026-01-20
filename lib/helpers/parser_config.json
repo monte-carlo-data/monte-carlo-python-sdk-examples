@@ -571,7 +571,7 @@
 						"entities": {
 							"required": false,
 							"default": "all",
-							"help": "Comma-separated list of entities: blocklists,domains,tags,exclusion_windows,data_products (or 'all')"
+							"help": "Comma-separated list of entities: blocklists,domains,tags,exclusion_windows,data_products,monitors (or 'all')"
 						},
 						"output_dir": {
 							"required": false,
@@ -580,7 +580,7 @@
 					}
 				},
 				"import": {
-					"description": "Import domains, data products, and blocklists from CSV files. Dry-run by default.",
+					"description": "Import domains, data products, blocklists, and monitors from files. Dry-run by default.",
 					"help": "Import MC configurations from files.",
 					"arguments": {
 						"profile": {
@@ -591,7 +591,7 @@
 						"entities": {
 							"required": false,
 							"default": "all",
-							"help": "Comma-separated list of entities: blocklists,domains,tags,exclusion_windows,data_products (or 'all')"
+							"help": "Comma-separated list of entities: blocklists,domains,tags,exclusion_windows,data_products,monitors (or 'all')"
 						},
 						"input_dir": {
 							"required": false,
@@ -609,7 +609,7 @@
 					}
 				},
 				"validate": {
-					"description": "Validate migration CSV files before importing.",
+					"description": "Validate migration files before importing.",
 					"help": "Validate migration files.",
 					"arguments": {
 						"profile": {
@@ -620,7 +620,7 @@
 						"entities": {
 							"required": false,
 							"default": "all",
-							"help": "Comma-separated list of entities: blocklists,domains,tags,exclusion_windows,data_products (or 'all')"
+							"help": "Comma-separated list of entities: blocklists,domains,tags,exclusion_windows,data_products,monitors (or 'all')"
 						},
 						"input_dir": {
 							"required": false,
