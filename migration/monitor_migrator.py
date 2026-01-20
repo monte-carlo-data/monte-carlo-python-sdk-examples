@@ -114,6 +114,10 @@ class MonitorMigrator(BaseMigrator):
 	def export(self, output_file: str = None, export_name: bool = True) -> dict:
 		"""Export all UI monitors to MaC YAML format.
 
+		Also generates/updates a shared warehouse_mapping_template.json file for
+		cross-environment migrations. The template is shared with other entity
+		types (tags, etc.) and will merge new warehouses into existing templates.
+
 		Args:
 			output_file (str): Path to output file. Uses default if not provided.
 			export_name (bool): Include monitor names in export (recommended for migrations).
@@ -142,11 +146,16 @@ class MonitorMigrator(BaseMigrator):
 			)
 
 			if result['success']:
-				# Store warehouse mapping for potential cross-env migrations
+				# Generate/update shared warehouse mapping template for cross-env migrations
 				if result.get('warehouse_mapping'):
-					LOGGER.info(f"[{self.entity_name}] Warehouse mapping available for cross-environment migrations")
-					for uuid, name in result['warehouse_mapping'].items():
-						LOGGER.debug(f"  {name} ({uuid})")
+					from lib.helpers.warehouse_mapping import WarehouseMappingLoader
+
+					LOGGER.info(f"[{self.entity_name}] Generating/updating warehouse mapping template...")
+					WarehouseMappingLoader.generate_template(
+						result['warehouse_mapping'],
+						str(output_path.parent),
+						merge=True  # Merge with existing template (shared with tags, etc.)
+					)
 
 				result['file'] = str(output_path)
 				self.log_result('export', result)
@@ -173,6 +182,11 @@ class MonitorMigrator(BaseMigrator):
 		- Tracking of migrated monitors
 		- Easy rollback via delete_by_namespace()
 		- Isolation from manually-created monitors
+
+		Warehouse mapping is resolved in this priority:
+		1. Explicit warehouse_mapping parameter
+		2. Instance warehouse_mapping property
+		3. warehouse_mapping.json file in input directory (shared with tags, etc.)
 
 		Args:
 			input_file (str): Path to input file. Uses default if not provided.
@@ -207,8 +221,17 @@ class MonitorMigrator(BaseMigrator):
 					errors=validation['errors']
 				)
 
-			# Use provided mapping or instance mapping
+			# Resolve warehouse mapping with priority: parameter > instance > file
 			mapping = warehouse_mapping or self._warehouse_mapping
+
+			if not mapping:
+				# Try to load from shared warehouse_mapping.json file
+				from lib.helpers.warehouse_mapping import WarehouseMappingLoader
+				input_dir = str(input_path.parent)
+				mapping = WarehouseMappingLoader.load_from_file(input_dir)
+
+				if mapping:
+					LOGGER.info(f"[{self.entity_name}] Using shared warehouse_mapping.json ({len(mapping)} mapping(s))")
 
 			# Delegate to monitors importer
 			result = self._importer.import_monitors(

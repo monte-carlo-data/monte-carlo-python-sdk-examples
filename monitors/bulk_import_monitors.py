@@ -656,14 +656,24 @@ def main(*args, **kwargs):
 				LOGGER.error("Input file required for import. Use -i <file>")
 				return
 
-			# Parse warehouse mapping from CLI if provided
+			# Resolve warehouse mapping: CLI > file in input directory
+			from lib.helpers.warehouse_mapping import WarehouseMappingLoader
+			from pathlib import Path
+
 			warehouse_map_arg = getattr(args, 'warehouse_map', None)
 			warehouse_mapping = None
+
 			if warehouse_map_arg:
-				from lib.helpers.warehouse_mapping import WarehouseMappingLoader
+				# Priority 1: CLI argument
 				warehouse_mapping = WarehouseMappingLoader.parse_cli_mapping(warehouse_map_arg)
 				if warehouse_mapping:
 					LOGGER.info(f"Using warehouse mapping from CLI: {len(warehouse_mapping)} mapping(s)")
+			else:
+				# Priority 2: warehouse_mapping.json in input directory
+				input_dir = str(Path(input_file).parent)
+				warehouse_mapping = WarehouseMappingLoader.load_from_file(input_dir)
+				if warehouse_mapping:
+					LOGGER.info(f"Using shared warehouse_mapping.json: {len(warehouse_mapping)} mapping(s)")
 
 			result = util.import_monitors(
 				input_file,
