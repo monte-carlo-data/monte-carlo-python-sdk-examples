@@ -54,9 +54,10 @@ class MonitorMigrator(BaseMigrator):
 		      asset_selection: ...
 
 	Note on namespaces:
-		Namespaces are labels attached to monitors, not pre-created entities.
-		When importing with --namespace X, monitors are tagged with "X".
-		The namespace exists as long as monitors with that label exist.
+		Namespaces are logical groupings for monitors, similar to CloudFormation
+		stack names. Monitors from different namespaces are isolated from each
+		other. Within a namespace, monitor names must be unique - the system uses
+		(account, namespace, name) as the unique identifier for each monitor.
 	"""
 
 	def __init__(

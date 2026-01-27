@@ -49,14 +49,14 @@ class BulkImportMonitors(Monitors):
 	- apply_warehouse_mapping(): Replace warehouse names for cross-env migrations
 	- deduplicate_monitor_names(): Ensure unique names
 	- import_monitors(): Import via montecarlo CLI
-	- get_monitors_by_namespace(): Query monitors by namespace label
+	- get_monitors_by_namespace(): Query monitors by namespace
 	- delete_monitors_by_namespace(): Delete monitors via CLI for rollback
 
 	Note on namespaces:
-		Namespaces in Monte Carlo MaC are labels/identifiers attached to monitors,
-		not separate pre-created entities. When you import with --namespace X,
-		monitors are tagged with namespace "X". The namespace exists as long as
-		monitors with that label exist.
+		Namespaces in Monte Carlo MaC are logical groupings for monitors, similar
+		to CloudFormation stack names. Monitors from different namespaces are
+		isolated from each other. Within a namespace, monitor names must be unique
+		- the system uses (account, namespace, name) as the unique identifier.
 	"""
 
 	def __init__(self, profile: str, config_file: str = None, progress: Progress = None):
@@ -251,7 +251,7 @@ class BulkImportMonitors(Monitors):
 
 		Args:
 			input_file (str): Path to YAML file.
-			namespace (str): Namespace label for monitors (default: "migration").
+			namespace (str): Namespace for monitor grouping (default: "migration").
 			dry_run (bool): If True, preview changes without committing.
 			warehouse_mapping (dict): Source -> destination warehouse name mapping.
 
@@ -516,11 +516,11 @@ class BulkImportMonitors(Monitors):
 		This is the recommended way to remove all monitors in a namespace,
 		useful for rolling back a migration or cleaning up test imports.
 
-		Note: Namespaces are labels on monitors, not separate entities.
-		Deleting all monitors in a namespace effectively "removes" that namespace.
+		Note: Deleting all monitors in a namespace removes the entire logical
+		grouping. This is a destructive operation - use dry_run first.
 
 		Args:
-			namespace (str): The namespace label to delete monitors from.
+			namespace (str): The namespace to delete monitors from.
 			dry_run (bool): If True, preview what would be deleted.
 
 		Returns:
