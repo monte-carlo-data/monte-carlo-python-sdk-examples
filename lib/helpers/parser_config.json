@@ -179,6 +179,20 @@
                     "help": "Path to CSV file from bulk_exclusion_window_exporter.py.\n\nExpected format (with header):\nid,resource_uuid,scope,database,dataset,full_table_id,start_time,end_time,reason,reason_type"
                   }
               }
+          },
+        "bulk_audience_exporter.py": {
+              "description": "\n\nExports all notification audiences and their channels to a CSV file. The output can be used with bulk_audience_importer.py to migrate audiences to another workspace.",
+              "arguments": {
+                  "profile": {
+                      "default": "default",
+                      "required": false,
+                      "help": "Specify an MCD profile name. Uses default otherwise."
+                  },
+                  "output_file": {
+                    "required": true,
+                    "help": "Path to output CSV file.\n\nOutput format (with header):\naudience_name,audience_created_by,channel_type,channel_recipient_display_name"
+                  }
+              }
           }
 	},
 	"monitors": {
