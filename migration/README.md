@@ -1,12 +1,12 @@
 # Migration Module
 
-The `migration/` module provides a unified utility for exporting and importing Monte Carlo data observability configurations between environments. It supports migrating **domains**, **data products**, **blocklists**, **tags**, and **exclusion windows**.
+The `migration/` module provides a unified utility for exporting and importing Monte Carlo data observability configurations between environments. It supports migrating **domains**, **data products**, **blocklists**, **tags**, **exclusion windows**, **audiences**, and **monitors**.
 
 ## Overview
 
 This module is designed to facilitate environment migrations (e.g. dev → prod or US workspace → EU workspace) by allowing you to:
 
-- **Export** configurations from a source MC environment to CSV files
+- **Export** configurations from a source MC environment to CSV/YAML files
 - **Validate** migration files before importing
 - **Import** configurations to a target MC environment (with dry-run support)
 
@@ -22,6 +22,8 @@ This module is designed to facilitate environment migrations (e.g. dev → prod 
 | `tag_migrator.py` | Handles object tags (properties)—key-value pairs attached to tables for organization. |
 | `exclusion_window_migrator.py` | Handles exclusion windows (data maintenance entries)—time periods when anomaly detection is suppressed. |
 | `data_product_migrator.py` | Handles data products—business-facing data assets for stakeholder monitoring. |
+| `audience_migrator.py` | Handles notification audiences—recipients and channels for alerts (email, Slack, Teams, etc.). |
+| `monitor_migrator.py` | Handles monitors—observability rules (metric, custom SQL, table monitors) exported to MaC YAML format. |
 
 ## Usage
 
@@ -73,16 +75,16 @@ Import from a custom directory:
 python migration/workspace_migrator.py import --profile target_env --input_dir ./my-exports --force yes
 ```
 
-## Cross-Environment Tag Migrations
+## Cross-Environment Warehouse Mapping
 
-When migrating tags between different environments (e.g., dev → prod), warehouse names typically differ. The migration module provides two ways to map source warehouses to destination warehouses:
+When migrating **tags** or **monitors** between different environments (e.g., dev → prod), warehouse names typically differ. The migration module provides two ways to map source warehouses to destination warehouses.
 
 ### Option 1: CLI Argument
 
 Provide mappings directly in the command:
 
 ```bash
-python migration/workspace_migrator.py import --entities tags \
+python migration/workspace_migrator.py import --entities tags,monitors \
   --profile target_env \
   --warehouse_map "Dev Snowflake=Prod Snowflake,Dev BigQuery=Prod BigQuery" \
   --force yes
@@ -116,7 +118,7 @@ python migration/workspace_migrator.py import --entities tags \
 3. **Import** will automatically use the mapping file:
 
 ```bash
-python migration/workspace_migrator.py import --entities tags --profile target_env --force yes
+python migration/workspace_migrator.py import --entities tags,monitors --profile target_env --force yes
 ```
 
 ### Mapping Priority
@@ -125,17 +127,101 @@ python migration/workspace_migrator.py import --entities tags --profile target_e
 2. `warehouse_mapping.json` file in input directory
 3. No fallback—unmapped warehouses are skipped with a warning
 
+**Note:** The warehouse mapping template is shared across entity types. Both tag and monitor exports will merge their warehouse references into the same template file.
+
+## Monitor Migration
+
+Monitors are exported to **MaC (Monitors as Code) YAML format**, enabling version control and code review workflows.
+
+### Namespace Organization
+
+Imported monitors are organized under a **namespace** (default: `migration`). Namespaces provide:
+
+- **Tracking**: Easily identify which monitors were migrated vs. manually created
+- **Isolation**: Monitors from different namespaces don't conflict
+- **Rollback**: Delete all monitors in a namespace with a single command
+
+Within a namespace, monitor names must be unique—the system uses `(account, namespace, name)` as the unique identifier.
+
+### Delete by Namespace
+
+To roll back a migration or clean up test imports:
+
+```bash
+# Preview what would be deleted
+python -c "
+from migration.monitor_migrator import MonitorMigrator
+m = MonitorMigrator('target_env', namespace='migration')
+result = m.delete_by_namespace(dry_run=True)
+print(f'Would delete {result[\"deleted\"]} monitors')
+"
+
+# Actually delete (dry_run=False)
+python -c "
+from migration.monitor_migrator import MonitorMigrator
+m = MonitorMigrator('target_env', namespace='migration')
+result = m.delete_by_namespace(dry_run=False)
+print(f'Deleted {result[\"deleted\"]} monitors')
+"
+```
+
+### Monitor YAML Format
+
+Exported monitors follow the MaC format:
+
+```yaml
+montecarlo:
+  metric:
+    - name: "Daily Row Count"
+      warehouse: "Prod Snowflake"
+      # ... metric configuration
+  custom_sql:
+    - name: "Data Quality Check"
+      sql: "SELECT COUNT(*) FROM ..."
+      # ... custom SQL configuration
+  table:
+    - name: "Freshness Monitor"
+      asset_selection:
+        # ... table selection
+```
+
+## Audience Migration
+
+Audiences define notification recipients and channels. Each audience can have multiple notification settings (email, Slack, Teams, PagerDuty, etc.).
+
+### CSV Format
+
+```csv
+audience_name,notification_type,recipients,recipients_display_names,integration_id
+Data Team,EMAIL,user1@example.com;user2@example.com,User One;User Two,
+Data Team,SLACK,#data-alerts,,slack-integration-uuid
+```
+
+- **recipients**: Semicolon-separated list of recipients (emails, channel names, etc.)
+- **recipients_display_names**: Semicolon-separated display names (optional)
+- **integration_id**: UUID of the integration for Slack/Teams/PagerDuty (empty for email)
+
+### Import Behavior
+
+- Audiences that already exist in the target environment are **skipped** (not updated)
+- Only new audiences are created
+- This prevents accidental overwrites of audiences that may have been customized in the target environment
+
 ## Supported Entities
 
-| Entity | Status | CSV Columns |
-|--------|--------|-------------|
-| `blocklists` | ✅ Implemented | `resource_id`, `target_object_type`, `match_type`, `dataset`, `project`, `effect` |
-| `domains` | ✅ Implemented | `domain_name`, `domain_description`, `asset_mcon` |
-| `tags` | ✅ Implemented | `warehouse_id`, `warehouse_name`, `full_table_id`, `asset_type`, `tag_key`, `tag_value` |
-| `exclusion_windows` | ✅ Implemented | `id`, `resource_uuid`, `scope`, `database`, `dataset`, `full_table_id`, `start_time`, `end_time`, `reason`, `reason_type` |
-| `data_products` | ✅ Implemented | `data_product_name`, `data_product_description`, `asset_mcon` |
+| Entity | Status | Format | Columns/Structure |
+|--------|--------|--------|-------------------|
+| `blocklists` | ✅ Implemented | CSV | `resource_id`, `target_object_type`, `match_type`, `dataset`, `project`, `effect` |
+| `domains` | ✅ Implemented | CSV | `domain_name`, `domain_description`, `asset_mcon` |
+| `tags` | ✅ Implemented | CSV | `warehouse_id`, `warehouse_name`, `full_table_id`, `asset_type`, `tag_key`, `tag_value` |
+| `exclusion_windows` | ✅ Implemented | CSV | `id`, `resource_uuid`, `scope`, `database`, `dataset`, `full_table_id`, `start_time`, `end_time`, `reason`, `reason_type` |
+| `data_products` | ✅ Implemented | CSV | `data_product_name`, `data_product_description`, `asset_mcon` |
+| `audiences` | ✅ Implemented | CSV | `audience_name`, `notification_type`, `recipients`, `recipients_display_names`, `integration_id` |
+| `monitors` | ✅ Implemented | YAML | MaC format with `montecarlo.metric`, `montecarlo.custom_sql`, `montecarlo.table` sections |
 
-Entities are imported in dependency order: blocklists → domains → tags → exclusion_windows → data_products.
+Entities are imported in dependency order: blocklists → domains → tags → exclusion_windows → data_products → audiences → monitors.
+
+**Note:** Audiences are imported before monitors because monitors may reference notification audiences.
 
 ## Output Files
 
@@ -148,7 +234,9 @@ migration/migration-data-exports/
 ├── tags.csv
 ├── exclusion_windows.csv
 ├── data_products.csv
-├── warehouse_mapping_template.json   # Template for tag warehouse mappings
+├── audiences.csv
+├── monitors.yaml                     # MaC-formatted monitor definitions
+├── warehouse_mapping_template.json   # Template for tag/monitor warehouse mappings
 └── migration_manifest.json           # Export metadata
 ```
 
@@ -190,19 +278,21 @@ mcd_token = target_token
 - **`lib/auth/mc_auth.py`**: Handles Monte Carlo authentication
 - **`lib/helpers/logs.py`**: Provides `LOGGER` and logging configuration
 - **`lib/helpers/sdk_helpers.py`**: Argument parser generation utilities
-- **`lib/helpers/warehouse_mapping.py`**: Warehouse mapping utilities for cross-environment tag migrations
+- **`lib/helpers/warehouse_mapping.py`**: Warehouse mapping utilities for cross-environment tag and monitor migrations
 
-### Admin Scripts (`admin/`)
+### Admin Scripts (`admin/`) and Monitors Scripts (`monitors/`)
 
-Migrators delegate to admin bulk scripts for core operations:
+Migrators delegate to bulk scripts for core operations:
 
 | Migrator | Uses |
 |----------|------|
-| `BlocklistMigrator` | `bulk_blocklist_exporter.py`, `bulk_blocklist_importer.py` |
-| `DomainMigrator` | `bulk_domain_exporter.py`, `bulk_domain_importerv2.py` |
-| `TagMigrator` | `bulk_tag_exporterv2.py`, `bulk_tag_importerv2.py` |
-| `ExclusionWindowMigrator` | `bulk_exclusion_window_exporter.py`, `bulk_exclusion_window_importer.py` |
-| `DataProductMigrator` | `bulk_data_product_exporter.py`, `bulk_data_product_importer.py` |
+| `BlocklistMigrator` | `admin/bulk_blocklist_exporter.py`, `admin/bulk_blocklist_importer.py` |
+| `DomainMigrator` | `admin/bulk_domain_exporter.py`, `admin/bulk_domain_importerv2.py` |
+| `TagMigrator` | `admin/bulk_tag_exporterv2.py`, `admin/bulk_tag_importerv2.py` |
+| `ExclusionWindowMigrator` | `admin/bulk_exclusion_window_exporter.py`, `admin/bulk_exclusion_window_importer.py` |
+| `DataProductMigrator` | `admin/bulk_data_product_exporter.py`, `admin/bulk_data_product_importer.py` |
+| `AudienceMigrator` | `admin/bulk_audience_exporter.py`, `admin/bulk_audience_importer.py` |
+| `MonitorMigrator` | `monitors/bulk_export_monitors_v2.py`, `monitors/bulk_import_monitors.py` |
 
 ### Logging (`logs/`)
 
