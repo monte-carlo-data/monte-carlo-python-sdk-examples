@@ -181,7 +181,7 @@
               }
           },
         "bulk_audience_exporter.py": {
-              "description": "\n\nExports all notification audiences and their channels to a CSV file. The output can be used with bulk_audience_importer.py to migrate audiences to another workspace.",
+              "description": "\n\nExports all notification audiences and their notification settings to a CSV file. The output can be used with bulk_audience_importer.py to migrate audiences to another workspace.",
               "arguments": {
                   "profile": {
                       "default": "default",
@@ -190,7 +190,26 @@
                   },
                   "output_file": {
                     "required": true,
-                    "help": "Path to output CSV file.\n\nOutput format (with header):\naudience_name,audience_created_by,channel_type,channel_recipient_display_name"
+                    "help": "Path to output CSV file.\n\nOutput format (with header):\naudience_name,notification_type,recipients,recipients_display_names,integration_id"
+                  }
+              }
+          },
+        "bulk_audience_importer.py": {
+              "description": "\n\nImports notification audiences from a CSV file (exported from bulk_audience_exporter.py). Creates audiences that don't exist, skips existing ones. Runs in DRY-RUN mode by default.",
+              "arguments": {
+                  "profile": {
+                      "default": "default",
+                      "required": false,
+                      "help": "Specify an MCD profile name. Uses default otherwise."
+                  },
+                  "input_file": {
+                    "required": true,
+                    "help": "Path to CSV file from bulk_audience_exporter.py.\n\nExpected format (with header):\naudience_name,notification_type,recipients,recipients_display_names,integration_id"
+                  },
+                  "force": {
+                    "required": false,
+                    "choices": ["yes", "no"],
+                    "help": "Set to 'yes' to commit changes. Default is dry-run (preview only)."
                   }
               }
           }

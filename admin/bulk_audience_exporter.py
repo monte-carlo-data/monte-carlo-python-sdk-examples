@@ -3,12 +3,15 @@
 # 2. Profile should be configured in configs/configs.ini
 #
 # Output CSV format:
-#   audience_name,audience_created_by,recipients_display_names
-#   Pablo Test,user@company.com,user@company.com
-#   Data Team,admin@company.com,"user1@company.com, user2@company.com"
+#   audience_name,notification_type,recipients,recipients_display_names,integration_id
+#   Pablo Test,EMAIL,palvarez@company.com,palvarez@company.com,
+#   Data Team,SLACK,C12345678,#data-alerts,<integration-uuid>
+#
+# Notification types: EMAIL, SLACK, SLACK_V2, MSTEAMS, MSTEAMS_V2, PAGERDUTY,
+#                     OPSGENIE, WEBHOOK, GOOGLE_CHAT, SERVICENOW, JIRA, etc.
 #
 # Note: The output CSV can be used with bulk_audience_importer.py to migrate audiences
-# to another workspace. One row per audience-notification_setting combination.
+# to another workspace. One row per notification_setting.
 
 import os
 import sys
@@ -42,31 +45,31 @@ class BulkAudienceExporter(Admin):
 		self.progress_bar = progress
 
 	def _get_audiences_query(self) -> Query:
-		"""Build query to fetch notification audiences with their channels.
+		"""Build query to fetch notification audiences with their notification settings.
 
 		Returns:
 			Query: Formed MC Query object for getNotificationAudiences.
 		"""
 		query = Query()
 		get_audiences = query.get_notification_audiences()
-		# Note: Field names discovered via API - NotificationAudience uses 'label' not 'name'
 		get_audiences.__fields__("uuid", "label")
-		# createdBy is a User object - need to select sub-fields
-		get_audiences.created_by.__fields__("email")
-		# notification_settings contains notification channel info
-		get_audiences.notification_settings.__fields__("uuid", "recipients_display_names")
+		# notification_settings contains the notification channel configuration
+		get_audiences.notification_settings.__fields__(
+			"uuid", "type", "recipients", "recipients_display_names",
+			"integration_id", "notification_enabled"
+		)
 
 		return query
 
 	def get_all_audiences(self) -> list:
-		"""Fetch all notification audiences with their channels.
+		"""Fetch all notification audiences with their notification settings.
 
 		Returns:
 			list[dict]: List of audiences with:
 				- name (str): Audience name (label)
-				- created_by (str): Creator email
 				- uuid (str): Audience UUID
-				- notification_settings (list): List of notification setting dicts
+				- notification_settings (list): List of notification setting dicts with
+					type, recipients, integration_id, extra, etc.
 		"""
 		LOGGER.info("Fetching notification audiences...")
 
@@ -81,21 +84,21 @@ class BulkAudienceExporter(Admin):
 				# Process notification_settings if present
 				if hasattr(audience, 'notification_settings') and audience.notification_settings:
 					for ns in audience.notification_settings:
-						# recipients_display_names is a list
-						recipients = ns.recipients_display_names if hasattr(ns, 'recipients_display_names') else []
+						# recipients and recipients_display_names are lists
+						recipients = ns.recipients if hasattr(ns, 'recipients') else []
+						recipients_display = ns.recipients_display_names if hasattr(ns, 'recipients_display_names') else []
+
 						notification_settings.append({
 							'uuid': ns.uuid if hasattr(ns, 'uuid') else '',
-							'recipients_display_names': ', '.join(recipients) if recipients else ''
+							'type': ns.type if hasattr(ns, 'type') else '',
+							'recipients': recipients if recipients else [],
+							'recipients_display_names': recipients_display if recipients_display else [],
+							'integration_id': ns.integration_id if hasattr(ns, 'integration_id') else '',
+							'notification_enabled': ns.notification_enabled if hasattr(ns, 'notification_enabled') else True
 						})
-
-				# created_by is a User object with email field
-				created_by_email = ''
-				if hasattr(audience, 'created_by') and audience.created_by:
-					created_by_email = audience.created_by.email if hasattr(audience.created_by, 'email') else ''
 
 				results.append({
 					'name': audience.label if hasattr(audience, 'label') else '',
-					'created_by': created_by_email,
 					'uuid': audience.uuid if hasattr(audience, 'uuid') else '',
 					'notification_settings': notification_settings
 				})
@@ -125,24 +128,30 @@ class BulkAudienceExporter(Admin):
 			with open(output_file, 'w', newline='') as csvfile:
 				writer = csv.writer(csvfile)
 				writer.writerow([
-					'audience_name', 'audience_created_by', 'recipients_display_names'
+					'audience_name', 'notification_type', 'recipients',
+					'recipients_display_names', 'integration_id'
 				])
 
 				for audience in audiences_data:
 					if audience['notification_settings']:
 						for ns in audience['notification_settings']:
+							# Join list fields with semicolons for CSV
+							recipients_str = ';'.join(ns['recipients']) if ns['recipients'] else ''
+							display_names_str = ';'.join(ns['recipients_display_names']) if ns['recipients_display_names'] else ''
+
 							writer.writerow([
 								audience['name'],
-								audience['created_by'],
-								ns['recipients_display_names']
+								ns['type'],
+								recipients_str,
+								display_names_str,
+								ns['integration_id'] or ''
 							])
 							rows_written += 1
 					else:
 						# Include audiences with no notification settings
 						writer.writerow([
 							audience['name'],
-							audience['created_by'],
-							''
+							'', '', '', ''
 						])
 						rows_written += 1
 
