@@ -42,6 +42,7 @@ from migration.data_product_migrator import DataProductMigrator
 from migration.tag_migrator import TagMigrator
 from migration.exclusion_window_migrator import ExclusionWindowMigrator
 from migration.monitor_migrator import MonitorMigrator
+from migration.audience_migrator import AudienceMigrator
 
 # Initialize logger
 util_name = os.path.basename(__file__).split('.')[0]
@@ -52,9 +53,10 @@ WORKSPACE_MIGRATOR_LOG = LOGS_DIR / f"{util_name}-{datetime.date.today()}.log"
 
 # Available entity types and their import order (dependencies first)
 # Note: Monitors are imported last as they may reference other entities (e.g., tags for table monitors)
-AVAILABLE_ENTITIES = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products', 'monitors']
-IMPLEMENTED_ENTITIES = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products', 'monitors']
-IMPORT_ORDER = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products', 'monitors']  # Dependency order
+# Note: Audiences define notification recipients and should be imported before monitors
+AVAILABLE_ENTITIES = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products', 'audiences', 'monitors']
+IMPLEMENTED_ENTITIES = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products', 'audiences', 'monitors']
+IMPORT_ORDER = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products', 'audiences', 'monitors']  # Dependency order
 
 
 class WorkspaceMigrator(Util):
@@ -86,6 +88,7 @@ class WorkspaceMigrator(Util):
 				'tags': TagMigrator(self.profile, progress=self.progress_bar),
 				'exclusion_windows': ExclusionWindowMigrator(self.profile, progress=self.progress_bar),
 				'data_products': DataProductMigrator(self.profile, progress=self.progress_bar),
+				'audiences': AudienceMigrator(self.profile, progress=self.progress_bar),
 				'monitors': MonitorMigrator(self.profile, progress=self.progress_bar),
 			}
 		return self._migrators
