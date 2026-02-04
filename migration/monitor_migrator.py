@@ -390,6 +390,59 @@ class MonitorMigrator(BaseMigrator):
 				errors=[str(e)]
 			)
 
+	def convert_to_ui(self, namespace: str = None, dry_run: bool = True) -> dict:
+		"""Convert monitors in a namespace from code-deployed to UI-editable.
+
+		Monitors imported via MaC YAML are deployed "as code" and cannot be
+		edited in the Monte Carlo UI. This method converts them to UI monitors,
+		enabling users to modify them through the interface.
+
+		Useful for:
+		- Making migrated monitors editable in the UI
+		- Post-migration workflow when UI editing is required
+
+		Args:
+			namespace (str): Namespace to convert. Uses instance namespace if not provided.
+			dry_run (bool): If True, preview what would be converted.
+
+		Returns:
+			dict: Conversion result with:
+				- success (bool): Whether conversion succeeded
+				- dry_run (bool): Whether this was a dry run
+				- converted (int): Number of monitors converted
+				- failed (int): Number of monitors that failed to convert
+				- errors (list): Any errors encountered
+		"""
+		target_namespace = namespace or self.namespace
+		mode = "DRY-RUN" if dry_run else "COMMIT"
+		LOGGER.info(f"[{self.entity_name}] Starting convert-to-ui ({mode}) for namespace '{target_namespace}'...")
+
+		try:
+			result = self._importer.convert_to_ui_by_namespace(
+				namespace=target_namespace,
+				dry_run=dry_run
+			)
+
+			if result['success']:
+				if dry_run:
+					LOGGER.info(f"[{self.entity_name}] Would convert {result['converted']} monitors to UI")
+				else:
+					LOGGER.info(f"[{self.entity_name}] Converted {result['converted']} monitors to UI")
+			else:
+				LOGGER.error(f"[{self.entity_name}] Convert-to-ui failed: {result.get('errors', [])}")
+
+			return result
+
+		except Exception as e:
+			LOGGER.error(f"[{self.entity_name}] Convert-to-ui failed: {e}")
+			return self.create_result(
+				success=False,
+				dry_run=dry_run,
+				converted=0,
+				failed=0,
+				errors=[str(e)]
+			)
+
 	def get_warehouse_mapping_from_export(self, export_result: dict = None) -> dict:
 		"""Get warehouse UUID -> name mapping from an export result.
 

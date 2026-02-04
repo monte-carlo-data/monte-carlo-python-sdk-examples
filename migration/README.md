@@ -165,6 +165,68 @@ print(f'Deleted {result[\"deleted\"]} monitors')
 "
 ```
 
+### Convert to UI
+
+Monitors imported via MaC (Monitors as Code) YAML are deployed as "code-managed" and **cannot be edited in the Monte Carlo UI**. Since the migration exports UI monitors (originally created in the UI), users typically expect to continue editing them in the UI after migration.
+
+The `convert-to-ui` functionality converts code-managed monitors to UI-editable monitors.
+
+#### Option 1: Auto-convert during import (Recommended)
+
+Use the `--convert-to-ui` flag to automatically convert monitors after import:
+
+```bash
+# Dry-run (preview import + conversion)
+python migration/workspace_migrator.py import --profile target_env \
+  --entities monitors --convert-to-ui
+
+# Commit (import + convert)
+python migration/workspace_migrator.py import --profile target_env \
+  --entities monitors --convert-to-ui --force yes
+```
+
+#### Option 2: Convert after import
+
+If you prefer to review imported monitors before making them UI-editable:
+
+```bash
+# First, import monitors (they will be code-managed)
+python migration/workspace_migrator.py import --profile target_env \
+  --entities monitors --force yes
+
+# Then, convert to UI (dry-run first)
+python migration/workspace_migrator.py convert-to-ui --profile target_env \
+  --namespace migration
+
+# Commit conversion
+python migration/workspace_migrator.py convert-to-ui --profile target_env \
+  --namespace migration --force yes
+```
+
+#### Option 3: Programmatic usage
+
+```python
+from migration.monitor_migrator import MonitorMigrator
+
+m = MonitorMigrator('target_env', namespace='migration')
+
+# Preview
+result = m.convert_to_ui(dry_run=True)
+print(f"Would convert {result['converted']} monitors to UI")
+
+# Execute
+result = m.convert_to_ui(dry_run=False)
+print(f"Converted {result['converted']} monitors to UI")
+```
+
+#### Option 4: Use CLI directly
+
+```bash
+montecarlo monitors convert-to-ui --namespace migration
+```
+
+**Note:** After conversion, monitors move from the custom namespace (e.g., `migration`) to the `ui` namespace. This means `delete_by_namespace('migration')` will no longer find them—they are now standard UI monitors.
+
 ### Monitor YAML Format
 
 Exported monitors follow the MaC format:

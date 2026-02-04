@@ -625,6 +625,132 @@ class BulkImportMonitors(Monitors):
 				'errors': [str(e)]
 			}
 
+	def convert_to_ui_by_namespace(
+		self,
+		namespace: str,
+		dry_run: bool = True
+	) -> dict:
+		"""Convert monitors in a namespace from code-deployed to UI-editable.
+
+		Monitors imported via MaC YAML are deployed "as code" and cannot be
+		edited in the Monte Carlo UI. This method converts them to UI monitors,
+		enabling users to modify them through the interface.
+
+		Uses the built-in Monte Carlo CLI command:
+		  montecarlo monitors convert-to-ui --namespace <namespace>
+
+		Args:
+			namespace (str): The namespace containing monitors to convert.
+			dry_run (bool): If True, preview what would be converted.
+
+		Returns:
+			dict: Result with keys:
+				- success (bool): Whether conversion succeeded
+				- dry_run (bool): Whether this was a dry run
+				- converted (int): Number of monitors converted
+				- failed (int): Number of monitors that failed
+				- errors (list): Any errors encountered
+		"""
+		mode = "DRY-RUN" if dry_run else "COMMIT"
+		namespace_clean = namespace.replace(':', '-').replace(' ', '_')
+		LOGGER.info(f"Starting monitor convert-to-ui ({mode}) for namespace '{namespace_clean}'...")
+
+		# Try to get monitors in namespace for reporting (optional - CLI will handle the actual work)
+		monitor_count = None
+		try:
+			monitor_uuids, raw_monitors = self.get_monitors_by_namespace(namespace)
+			monitor_count = len(monitor_uuids)
+
+			if monitor_count == 0:
+				LOGGER.info(f"No monitors found in namespace '{namespace_clean}'")
+				return {
+					'success': True,
+					'dry_run': dry_run,
+					'converted': 0,
+					'failed': 0,
+					'errors': []
+				}
+
+			LOGGER.info(f"Found {monitor_count} monitors to convert")
+
+			# Log monitor names for visibility
+			for m in raw_monitors:
+				monitor_name = getattr(m, 'name', None) or m.uuid[:8]
+				if dry_run:
+					LOGGER.info(f"  WOULD CONVERT: {monitor_name}")
+				else:
+					LOGGER.info(f"  TO CONVERT: {monitor_name}")
+		except Exception as e:
+			LOGGER.warning(f"Could not fetch monitor list (proceeding with CLI): {e}")
+
+		# Build CLI command
+		cmd_args = [
+			"montecarlo", "--profile", self.profile,
+			"monitors", "convert-to-ui",
+			"--namespace", namespace_clean
+		]
+
+		if dry_run:
+			cmd_args.append("--dry-run")
+
+		LOGGER.info(f"Running: {' '.join(cmd_args)}")
+
+		try:
+			if dry_run:
+				cmd = subprocess.run(cmd_args, capture_output=True, text=True)
+			else:
+				# Non-dry-run requires confirmation - pass "y"
+				cmd = subprocess.run(cmd_args, capture_output=True, text=True, input="y")
+
+			if cmd.returncode != 0:
+				LOGGER.error(f"CLI stderr: {cmd.stderr}")
+				LOGGER.error(f"CLI stdout: {cmd.stdout}")
+				return {
+					'success': False,
+					'dry_run': dry_run,
+					'converted': 0,
+					'failed': monitor_count or 0,
+					'errors': [cmd.stderr or cmd.stdout or "CLI command failed"]
+				}
+
+			LOGGER.info(cmd.stdout)
+
+			# Use monitor_count if we have it, otherwise report based on CLI success
+			converted = monitor_count if monitor_count is not None else 0
+			if not dry_run:
+				LOGGER.info(f"Convert-to-ui complete: monitors converted successfully")
+			else:
+				LOGGER.info(f"Convert-to-ui dry-run complete")
+
+			return {
+				'success': True,
+				'dry_run': dry_run,
+				'converted': converted,
+				'failed': 0,
+				'errors': []
+			}
+
+		except FileNotFoundError:
+			error = "montecarlo CLI not found. Install with: pip install montecarlodata"
+			LOGGER.error(error)
+			return {
+				'success': False,
+				'dry_run': dry_run,
+				'converted': 0,
+				'failed': monitor_count or 0,
+				'errors': [error]
+			}
+
+		except Exception as e:
+			LOGGER.error(f"Convert-to-ui failed: {e}")
+			return {
+				'success': False,
+				'dry_run': dry_run,
+				'converted': 0,
+				'failed': monitor_count or 0,
+				'errors': [str(e)]
+			}
+
 
 def main(*args, **kwargs):
 	"""Main entry point for the bulk import monitors utility."""
@@ -702,6 +828,18 @@ def main(*args, **kwargs):
 			if dry_run:
 				LOGGER.info("")
 				LOGGER.info("This was a DRY-RUN. No changes were made. Use --force yes to delete.")
+
+		elif command == 'convert-to-ui':
+			result = util.convert_to_ui_by_namespace(namespace, dry_run=dry_run)
+
+			if result['success']:
+				LOGGER.info(f"Convert-to-ui completed: {result['converted']} converted")
+			else:
+				LOGGER.error(f"Convert-to-ui failed: {result['errors']}")
+
+			if dry_run:
+				LOGGER.info("")
+				LOGGER.info("This was a DRY-RUN. No changes were made. Use --force yes to convert.")
 
 	util = BulkImportMonitors(args.profile)
 	run_utility(util, args)

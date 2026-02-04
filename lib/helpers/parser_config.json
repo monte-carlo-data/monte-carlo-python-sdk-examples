@@ -634,34 +634,60 @@
 							"required": false,
 							"help": "Warehouse name mapping for tag migrations: 'Source1=Dest1,Source2=Dest2'. Or create warehouse_mapping.json in input_dir."
 						},
-						"force": {
-							"required": false,
-							"choices": ["yes", "no"],
-							"help": "Set to 'yes' to commit changes. Default is dry-run (preview only)."
-						}
+					"force": {
+						"required": false,
+						"choices": ["yes", "no"],
+						"help": "Set to 'yes' to commit changes. Default is dry-run (preview only)."
+					},
+					"convert_to_ui": {
+						"required": false,
+						"action": "store_true",
+						"help": "Convert monitors to UI-editable after import."
 					}
-				},
-				"validate": {
-					"description": "Validate migration files before importing.",
-					"help": "Validate migration files.",
-					"arguments": {
-						"profile": {
-							"default": "default",
-							"required": false,
-							"help": "Specify an MCD profile name. Uses default otherwise."
-						},
-						"entities": {
-							"required": false,
-							"default": "all",
-							"help": "Comma-separated list of entities: blocklists,domains,tags,exclusion_windows,data_products,monitors (or 'all')"
-						},
-						"input_dir": {
-							"required": false,
-							"help": "Directory containing files to validate. Defaults to migration/migration-data-exports/"
-						}
+				}
+			},
+			"validate": {
+				"description": "Validate migration files before importing.",
+				"help": "Validate migration files.",
+				"arguments": {
+					"profile": {
+						"default": "default",
+						"required": false,
+						"help": "Specify an MCD profile name. Uses default otherwise."
+					},
+					"entities": {
+						"required": false,
+						"default": "all",
+						"help": "Comma-separated list of entities: blocklists,domains,tags,exclusion_windows,data_products,monitors (or 'all')"
+					},
+					"input_dir": {
+						"required": false,
+						"help": "Directory containing files to validate. Defaults to migration/migration-data-exports/"
+					}
+				}
+			},
+			"convert-to-ui": {
+				"description": "Convert monitors in a namespace from code-deployed to UI-editable.",
+				"help": "Convert monitors to UI-editable.",
+				"arguments": {
+					"profile": {
+						"default": "default",
+						"required": false,
+						"help": "Specify an MCD profile name. Uses default otherwise."
+					},
+					"namespace": {
+						"required": false,
+						"default": "migration",
+						"help": "Namespace containing monitors to convert. Defaults to 'migration'."
+					},
+					"force": {
+						"required": false,
+						"choices": ["yes", "no"],
+						"help": "Set to 'yes' to commit changes. Default is dry-run (preview only)."
 					}
 				}
 			}
 		}
 	}
+}
 }
