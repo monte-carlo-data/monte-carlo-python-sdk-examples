@@ -124,42 +124,77 @@ class WarehouseMappingLoader:
         return {}
 
     @staticmethod
-    def generate_template(source_warehouses: dict, output_dir: str) -> str:
-        """Generate warehouse_mapping_template.json with source warehouses.
+    def generate_template(source_warehouses: dict, output_dir: str, merge: bool = True) -> str:
+        """Generate or update warehouse_mapping_template.json with source warehouses.
 
         Creates a template file that users can edit to define their mappings.
+        If merge=True and template exists, new warehouses are added while preserving
+        existing mappings. This allows multiple entity types (tags, monitors) to
+        contribute to the same shared template.
 
         Args:
             source_warehouses: Dict of warehouse_id -> warehouse_name from export
             output_dir: Directory to write the template file
+            merge: If True, merge with existing template. If False, overwrite.
 
         Returns:
             str: Path to the generated template file
         """
-        # Get unique warehouse names
+        template_file = Path(output_dir) / WarehouseMappingLoader.TEMPLATE_FILENAME
+
+        # Get unique warehouse names from input
         unique_names = sorted(set(name for name in source_warehouses.values() if name))
 
         if not unique_names:
             LOGGER.debug("No source warehouses to generate template for")
             return ""
 
+        # Load existing template if merge=True
+        existing_mapping = {}
+        if merge and template_file.exists():
+            try:
+                with open(template_file, 'r') as f:
+                    data = json.load(f)
+                    existing_mapping = data.get('warehouse_mapping', {})
+                    LOGGER.debug(f"Found existing template with {len(existing_mapping)} warehouse(s)")
+            except Exception as e:
+                LOGGER.warning(f"Could not read existing template, will create new: {e}")
+
+        # Merge: add new warehouses, preserve existing mappings
+        merged_mapping = existing_mapping.copy()
+        new_warehouses = []
+
+        for name in unique_names:
+            if name not in merged_mapping:
+                merged_mapping[name] = "<ENTER_DESTINATION_WAREHOUSE>"
+                new_warehouses.append(name)
+
+        # Sort the merged mapping for consistency
+        sorted_mapping = dict(sorted(merged_mapping.items()))
+
+        # Log what changed
+        if existing_mapping and new_warehouses:
+            LOGGER.info(f"Added {len(new_warehouses)} new warehouse(s) to existing template: {', '.join(new_warehouses)}")
+        elif existing_mapping and not new_warehouses:
+            LOGGER.info(f"Template already contains all warehouses ({len(existing_mapping)} total)")
+            return str(template_file)  # No changes needed
+        else:
+            LOGGER.info(f"Creating new template with {len(unique_names)} warehouse(s)")
+
         template = {
             "_instructions": (
                 "Replace <ENTER_DESTINATION_WAREHOUSE> with the actual warehouse name "
                 "in your target environment. Then rename this file to 'warehouse_mapping.json'. "
-                "Remove any warehouses you don't want to migrate."
+                "Remove any warehouses you don't want to migrate. "
+                "This mapping is shared across entity types (tags, monitors, etc.)."
             ),
-            "warehouse_mapping": {
-                name: "<ENTER_DESTINATION_WAREHOUSE>"
-                for name in unique_names
-            }
+            "warehouse_mapping": sorted_mapping
         }
 
-        template_file = Path(output_dir) / WarehouseMappingLoader.TEMPLATE_FILENAME
         try:
             with open(template_file, 'w') as f:
                 json.dump(template, f, indent=2)
-            LOGGER.info(f"Generated mapping template: {template_file}")
+            LOGGER.info(f"Saved mapping template: {template_file}")
             return str(template_file)
         except Exception as e:
             LOGGER.error(f"Failed to generate mapping template: {e}")

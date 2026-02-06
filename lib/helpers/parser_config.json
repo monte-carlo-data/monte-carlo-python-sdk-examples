@@ -179,6 +179,39 @@
                     "help": "Path to CSV file from bulk_exclusion_window_exporter.py.\n\nExpected format (with header):\nid,resource_uuid,scope,database,dataset,full_table_id,start_time,end_time,reason,reason_type"
                   }
               }
+          },
+        "bulk_audience_exporter.py": {
+              "description": "\n\nExports all notification audiences and their notification settings to a CSV file. The output can be used with bulk_audience_importer.py to migrate audiences to another workspace.",
+              "arguments": {
+                  "profile": {
+                      "default": "default",
+                      "required": false,
+                      "help": "Specify an MCD profile name. Uses default otherwise."
+                  },
+                  "output_file": {
+                    "required": true,
+                    "help": "Path to output CSV file.\n\nOutput format (with header):\naudience_name,notification_type,recipients,recipients_display_names,integration_id"
+                  }
+              }
+          },
+        "bulk_audience_importer.py": {
+              "description": "\n\nImports notification audiences from a CSV file (exported from bulk_audience_exporter.py). Creates audiences that don't exist, skips existing ones. Runs in DRY-RUN mode by default.",
+              "arguments": {
+                  "profile": {
+                      "default": "default",
+                      "required": false,
+                      "help": "Specify an MCD profile name. Uses default otherwise."
+                  },
+                  "input_file": {
+                    "required": true,
+                    "help": "Path to CSV file from bulk_audience_exporter.py.\n\nExpected format (with header):\naudience_name,notification_type,recipients,recipients_display_names,integration_id"
+                  },
+                  "force": {
+                    "required": false,
+                    "choices": ["yes", "no"],
+                    "help": "Set to 'yes' to commit changes. Default is dry-run (preview only)."
+                  }
+              }
           }
 	},
 	"monitors": {
@@ -395,6 +428,80 @@
 				}
 			}
 		},
+		"bulk_export_monitors_v2.py": {
+			"description": "\nMigration-compatible monitor exporter. Exports UI monitors to YAML file with structured result output and warehouse mapping support for cross-environment migrations.\n\nUsed by the migration framework (MonitorMigrator) or standalone.",
+			"arguments": {
+				"profile": {
+					"default": "default",
+					"required": false,
+					"help": "Specify an MCD profile name. Uses default otherwise."
+				},
+				"output_file": {
+					"required": true,
+					"help": "Path to output YAML file.\n\nOutput format: MaC YAML (montecarlo: ...)"
+				},
+				"export_name": {
+					"required": false,
+					"default": "y",
+					"help": "Include monitor names in the export? Default 'y' for migration compatibility (enables UPDATE vs DELETE+CREATE on re-import).",
+					"choices": ["y", "n"]
+				}
+			}
+		},
+		"bulk_import_monitors.py": {
+			"description": "\nMigration-compatible monitor importer. Imports monitors from YAML file using montecarlo CLI. Supports warehouse mapping, name deduplication, and namespace-based organization.\n\nUsed by the migration framework (MonitorMigrator) or standalone.",
+			"subparsers": {
+				"import": {
+					"description": "Import monitors from YAML file.",
+					"help": "Import monitors from YAML file.",
+					"arguments": {
+						"profile": {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"input_file": {
+							"required": true,
+							"help": "Path to YAML file containing monitor definitions."
+						},
+						"namespace": {
+							"required": false,
+							"default": "migration",
+							"help": "Namespace for imported monitors. Default: 'migration'"
+						},
+						"warehouse_map": {
+							"required": false,
+							"help": "Warehouse name mapping: 'Source1=Dest1,Source2=Dest2'"
+						},
+						"force": {
+							"required": false,
+							"choices": ["yes", "no"],
+							"help": "Set to 'yes' to commit changes. Default is dry-run."
+						}
+					}
+				},
+				"delete": {
+					"description": "Delete all monitors in a namespace (for rollback).",
+					"help": "Delete monitors by namespace.",
+					"arguments": {
+						"profile": {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"namespace": {
+							"required": true,
+							"help": "Namespace to delete monitors from."
+						},
+						"force": {
+							"required": false,
+							"choices": ["yes", "no"],
+							"help": "Set to 'yes' to commit deletion. Default is dry-run."
+						}
+					}
+				}
+			}
+		},
 		"deduplicate_metric_monitors.py": {
 			"description": "\nFinds and removes duplicate metric monitors from an input YML file.",
 			"arguments": {
@@ -497,7 +604,7 @@
 						"entities": {
 							"required": false,
 							"default": "all",
-							"help": "Comma-separated list of entities: blocklists,domains,tags,exclusion_windows,data_products (or 'all')"
+							"help": "Comma-separated list of entities: blocklists,domains,tags,exclusion_windows,data_products,monitors (or 'all')"
 						},
 						"output_dir": {
 							"required": false,
@@ -506,7 +613,7 @@
 					}
 				},
 				"import": {
-					"description": "Import domains, data products, and blocklists from CSV files. Dry-run by default.",
+					"description": "Import domains, data products, blocklists, and monitors from files. Dry-run by default.",
 					"help": "Import MC configurations from files.",
 					"arguments": {
 						"profile": {
@@ -517,7 +624,7 @@
 						"entities": {
 							"required": false,
 							"default": "all",
-							"help": "Comma-separated list of entities: blocklists,domains,tags,exclusion_windows,data_products (or 'all')"
+							"help": "Comma-separated list of entities: blocklists,domains,tags,exclusion_windows,data_products,monitors (or 'all')"
 						},
 						"input_dir": {
 							"required": false,
@@ -527,34 +634,60 @@
 							"required": false,
 							"help": "Warehouse name mapping for tag migrations: 'Source1=Dest1,Source2=Dest2'. Or create warehouse_mapping.json in input_dir."
 						},
-						"force": {
-							"required": false,
-							"choices": ["yes", "no"],
-							"help": "Set to 'yes' to commit changes. Default is dry-run (preview only)."
-						}
+					"force": {
+						"required": false,
+						"choices": ["yes", "no"],
+						"help": "Set to 'yes' to commit changes. Default is dry-run (preview only)."
+					},
+					"convert_to_ui": {
+						"required": false,
+						"action": "store_true",
+						"help": "Convert monitors to UI-editable after import."
 					}
-				},
-				"validate": {
-					"description": "Validate migration CSV files before importing.",
-					"help": "Validate migration files.",
-					"arguments": {
-						"profile": {
-							"default": "default",
-							"required": false,
-							"help": "Specify an MCD profile name. Uses default otherwise."
-						},
-						"entities": {
-							"required": false,
-							"default": "all",
-							"help": "Comma-separated list of entities: blocklists,domains,tags,exclusion_windows,data_products (or 'all')"
-						},
-						"input_dir": {
-							"required": false,
-							"help": "Directory containing files to validate. Defaults to migration/migration-data-exports/"
-						}
+				}
+			},
+			"validate": {
+				"description": "Validate migration files before importing.",
+				"help": "Validate migration files.",
+				"arguments": {
+					"profile": {
+						"default": "default",
+						"required": false,
+						"help": "Specify an MCD profile name. Uses default otherwise."
+					},
+					"entities": {
+						"required": false,
+						"default": "all",
+						"help": "Comma-separated list of entities: blocklists,domains,tags,exclusion_windows,data_products,monitors (or 'all')"
+					},
+					"input_dir": {
+						"required": false,
+						"help": "Directory containing files to validate. Defaults to migration/migration-data-exports/"
+					}
+				}
+			},
+			"convert-to-ui": {
+				"description": "Convert monitors in a namespace from code-deployed to UI-editable.",
+				"help": "Convert monitors to UI-editable.",
+				"arguments": {
+					"profile": {
+						"default": "default",
+						"required": false,
+						"help": "Specify an MCD profile name. Uses default otherwise."
+					},
+					"namespace": {
+						"required": false,
+						"default": "migration",
+						"help": "Namespace containing monitors to convert. Defaults to 'migration'."
+					},
+					"force": {
+						"required": false,
+						"choices": ["yes", "no"],
+						"help": "Set to 'yes' to commit changes. Default is dry-run (preview only)."
 					}
 				}
 			}
 		}
 	}
+}
 }

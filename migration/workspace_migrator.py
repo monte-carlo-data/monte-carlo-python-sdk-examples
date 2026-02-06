@@ -41,6 +41,8 @@ from migration.domain_migrator import DomainMigrator
 from migration.data_product_migrator import DataProductMigrator
 from migration.tag_migrator import TagMigrator
 from migration.exclusion_window_migrator import ExclusionWindowMigrator
+from migration.monitor_migrator import MonitorMigrator
+from migration.audience_migrator import AudienceMigrator
 
 # Initialize logger
 util_name = os.path.basename(__file__).split('.')[0]
@@ -50,10 +52,11 @@ logging.config.dictConfig(LoggingConfigs.logging_configs(util_name))
 WORKSPACE_MIGRATOR_LOG = LOGS_DIR / f"{util_name}-{datetime.date.today()}.log"
 
 # Available entity types and their import order (dependencies first)
-# Note: Some entities are placeholders for future implementation
-AVAILABLE_ENTITIES = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products']
-IMPLEMENTED_ENTITIES = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products']  # Currently implemented
-IMPORT_ORDER = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products']  # Dependency order
+# Note: Monitors are imported last as they may reference other entities (e.g., tags for table monitors)
+# Note: Audiences define notification recipients and should be imported before monitors
+AVAILABLE_ENTITIES = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products', 'audiences', 'monitors']
+IMPLEMENTED_ENTITIES = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products', 'audiences', 'monitors']
+IMPORT_ORDER = ['blocklists', 'domains', 'tags', 'exclusion_windows', 'data_products', 'audiences', 'monitors']  # Dependency order
 
 
 class WorkspaceMigrator(Util):
@@ -85,6 +88,8 @@ class WorkspaceMigrator(Util):
 				'tags': TagMigrator(self.profile, progress=self.progress_bar),
 				'exclusion_windows': ExclusionWindowMigrator(self.profile, progress=self.progress_bar),
 				'data_products': DataProductMigrator(self.profile, progress=self.progress_bar),
+				'audiences': AudienceMigrator(self.profile, progress=self.progress_bar),
+				'monitors': MonitorMigrator(self.profile, progress=self.progress_bar),
 			}
 		return self._migrators
 
@@ -206,7 +211,8 @@ class WorkspaceMigrator(Util):
 		entities: list = None,
 		input_dir: str = None,
 		dry_run: bool = True,
-		warehouse_mapping: dict = None
+		warehouse_mapping: dict = None,
+		convert_to_ui: bool = False
 	):
 		"""Run import for specified entities.
 
@@ -216,6 +222,7 @@ class WorkspaceMigrator(Util):
 			dry_run (bool): If True, preview changes without committing.
 			warehouse_mapping (dict): Warehouse name mapping for tag migrations.
 								    Source name -> destination name.
+			convert_to_ui (bool): If True, convert monitors to UI-editable after import.
 		"""
 		self._ensure_workspace_migrator_log_handler()
 
@@ -247,8 +254,8 @@ class WorkspaceMigrator(Util):
 
 			LOGGER.info(f"Importing [{entity}] ({mode})...")
 			try:
-				# Pass warehouse_mapping only to tag migrator
-				if entity == 'tags' and warehouse_mapping:
+				# Pass warehouse_mapping to migrators that support it
+				if entity in ('tags', 'monitors') and warehouse_mapping:
 					result = migrator.import_data(dry_run=dry_run, warehouse_mapping=warehouse_mapping)
 				else:
 					result = migrator.import_data(dry_run=dry_run)
@@ -270,9 +277,70 @@ class WorkspaceMigrator(Util):
 
 			self._update_progress(progress_per_entity)
 
+		# Convert monitors to UI if requested and monitors were imported successfully
+		if convert_to_ui and 'monitors' in results:
+			monitor_result = results.get('monitors', {})
+			if monitor_result.get('success') and not dry_run:
+				LOGGER.info("")
+				LOGGER.info("Converting monitors to UI-editable...")
+				monitor_migrator = self.migrators.get('monitors')
+				if monitor_migrator:
+					convert_result = monitor_migrator.convert_to_ui(dry_run=False)
+					results['monitors_convert_to_ui'] = convert_result
+					if convert_result.get('success'):
+						LOGGER.info(f"[monitors] Converted {convert_result.get('converted', 0)} monitors to UI")
+					else:
+						LOGGER.error(f"[monitors] Convert-to-ui failed: {convert_result.get('errors', [])}")
+			elif dry_run and convert_to_ui:
+				LOGGER.info("")
+				LOGGER.info("[monitors] Would convert monitors to UI after import (use --force yes to apply)")
+
 		LOGGER.info("=" * 50)
 		LOGGER.info(f"Import ({mode}) complete!")
 		self._log_summary(results)
+
+		if dry_run:
+			LOGGER.info("")
+			LOGGER.info("This was a DRY-RUN. To commit changes, run with --force yes")
+
+	def run_convert_to_ui(self, namespace: str = None, dry_run: bool = True):
+		"""Convert monitors in a namespace from code-deployed to UI-editable.
+
+		Args:
+			namespace (str): Namespace to convert. Uses 'migration' if not provided.
+			dry_run (bool): If True, preview what would be converted.
+		"""
+		self._ensure_workspace_migrator_log_handler()
+
+		namespace = namespace or 'migration'
+		mode = "DRY-RUN" if dry_run else "COMMIT"
+		LOGGER.info(f"Starting convert-to-ui ({mode}) for namespace '{namespace}'...")
+		LOGGER.info("=" * 50)
+
+		monitor_migrator = self.migrators.get('monitors')
+		if not monitor_migrator:
+			LOGGER.error("Monitor migrator not available")
+			return
+
+		try:
+			result = monitor_migrator.convert_to_ui(namespace=namespace, dry_run=dry_run)
+
+			if result.get('success'):
+				converted = result.get('converted', 0)
+				if dry_run:
+					LOGGER.info(f"Would convert {converted} monitors to UI")
+				else:
+					LOGGER.info(f"Converted {converted} monitors to UI")
+			else:
+				LOGGER.error(f"Convert-to-ui failed")
+				for error in result.get('errors', []):
+					LOGGER.error(f"  - {error}")
+
+		except Exception as e:
+			LOGGER.error(f"Convert-to-ui failed with exception: {e}")
+
+		LOGGER.info("=" * 50)
+		LOGGER.info(f"Convert-to-ui ({mode}) complete!")
 
 		if dry_run:
 			LOGGER.info("")
@@ -438,11 +506,26 @@ def main(*args, **kwargs):
 				if warehouse_mapping:
 					LOGGER.info(f"Using warehouse mapping from CLI: {len(warehouse_mapping)} mapping(s)")
 
-			util.run_import(entities, input_dir=input_dir, dry_run=dry_run, warehouse_mapping=warehouse_mapping)
+			# Check if convert-to-ui flag is set
+			convert_to_ui = getattr(args, 'convert_to_ui', False)
+
+			util.run_import(
+				entities,
+				input_dir=input_dir,
+				dry_run=dry_run,
+				warehouse_mapping=warehouse_mapping,
+				convert_to_ui=convert_to_ui
+			)
 
 		elif command == 'validate':
 			input_dir = getattr(args, 'input_dir', None)
 			util.run_validate(entities, input_dir=input_dir)
+
+		elif command == 'convert-to-ui':
+			force = getattr(args, 'force', None)
+			dry_run = force != 'yes'
+			namespace = getattr(args, 'namespace', 'migration')
+			util.run_convert_to_ui(namespace=namespace, dry_run=dry_run)
 
 	util = WorkspaceMigrator(args.profile)
 	run_utility(util, args)
