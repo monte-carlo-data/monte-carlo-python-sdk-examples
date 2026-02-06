@@ -193,28 +193,6 @@ python migration/workspace_migrator.py convert-to-ui --profile target_env \
   --namespace migration --force yes
 ```
 
-#### Option 3: Programmatic usage
-
-```python
-from migration.monitor_migrator import MonitorMigrator
-
-m = MonitorMigrator('target_env', namespace='migration')
-
-# Preview
-result = m.convert_to_ui(dry_run=True)
-print(f"Would convert {result['converted']} monitors to UI")
-
-# Execute
-result = m.convert_to_ui(dry_run=False)
-print(f"Converted {result['converted']} monitors to UI")
-```
-
-#### Option 4: Use CLI directly
-
-```bash
-montecarlo monitors convert-to-ui --namespace migration
-```
-
 **Note:** After conversion, monitors move from the custom namespace (e.g., `migration`) to the `ui` namespace. This means `delete_by_namespace('migration')` will no longer find them—they are now standard UI monitors.
 
 ### Monitor YAML Format
