@@ -148,21 +148,11 @@ Within a namespace, monitor names must be unique—the system uses `(account, na
 To roll back a migration or clean up test imports:
 
 ```bash
-# Preview what would be deleted
-python -c "
-from migration.monitor_migrator import MonitorMigrator
-m = MonitorMigrator('target_env', namespace='migration')
-result = m.delete_by_namespace(dry_run=True)
-print(f'Would delete {result[\"deleted\"]} monitors')
-"
+# Preview what would be deleted (dry-run)
+montecarlo --profile target_env monitors delete --namespace migration --dry-run
 
-# Actually delete (dry_run=False)
-python -c "
-from migration.monitor_migrator import MonitorMigrator
-m = MonitorMigrator('target_env', namespace='migration')
-result = m.delete_by_namespace(dry_run=False)
-print(f'Deleted {result[\"deleted\"]} monitors')
-"
+# Actually delete
+montecarlo --profile target_env monitors delete --namespace migration
 ```
 
 ### Convert to UI

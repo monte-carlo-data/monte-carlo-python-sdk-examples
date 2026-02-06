@@ -503,6 +503,30 @@ class BulkImportMonitors(Monitors):
 		LOGGER.info(f"Found {len(monitors)} monitors in namespace '{namespace_clean}'")
 		return monitors, raw_items
 
+	def _parse_delete_output(self, cli_output: str) -> int:
+		"""Parse montecarlo monitors delete CLI output to extract count.
+
+		Args:
+			cli_output (str): Raw CLI output.
+
+		Returns:
+			int: Number of monitors deleted/to be deleted.
+		"""
+		import re
+
+		# Count standalone DELETE operations (e.g., " - DELETE monitor_name")
+		# Use word boundary to avoid matching "DELETED" in other contexts
+		delete_count = len(re.findall(r"\bDELETE\b", cli_output))
+		if delete_count > 0:
+			return delete_count
+
+		# Try to find numeric count in output (e.g., "5 monitors")
+		match = re.search(r"(\d+)\s+monitor", cli_output, re.IGNORECASE)
+		if match:
+			return int(match.group(1))
+
+		return 0
+
 	def delete_monitors_by_namespace(
 		self,
 		namespace: str,
@@ -535,31 +559,7 @@ class BulkImportMonitors(Monitors):
 		namespace_clean = namespace.replace(':', '-').replace(' ', '_')
 		LOGGER.info(f"Starting monitor delete ({mode}) for namespace '{namespace_clean}'...")
 
-		# First, get monitor count for reporting (optional but useful for logging)
-		monitor_uuids, raw_monitors = self.get_monitors_by_namespace(namespace)
-		monitor_count = len(monitor_uuids)
-
-		if monitor_count == 0:
-			LOGGER.info(f"No monitors found in namespace '{namespace_clean}'")
-			return {
-				'success': True,
-				'dry_run': dry_run,
-				'deleted': 0,
-				'failed': 0,
-				'errors': []
-			}
-
-		LOGGER.info(f"Found {monitor_count} monitors to delete")
-
-		# Log monitor names for visibility
-		for m in raw_monitors:
-			monitor_name = getattr(m, 'name', None) or m.uuid[:8]
-			if dry_run:
-				LOGGER.info(f"  WOULD DELETE: {monitor_name}")
-			else:
-				LOGGER.info(f"  TO DELETE: {monitor_name}")
-
-		# Use built-in CLI command for deletion
+		# Build CLI command
 		cmd_args = [
 			"montecarlo", "--profile", self.profile,
 			"monitors", "delete",
@@ -578,28 +578,26 @@ class BulkImportMonitors(Monitors):
 				# Non-dry-run requires confirmation - pass "y"
 				cmd = subprocess.run(cmd_args, capture_output=True, text=True, input="y")
 
+			LOGGER.info(cmd.stdout)
+
 			if cmd.returncode != 0:
 				LOGGER.error(f"CLI stderr: {cmd.stderr}")
-				LOGGER.error(f"CLI stdout: {cmd.stdout}")
 				return {
 					'success': False,
 					'dry_run': dry_run,
 					'deleted': 0,
-					'failed': monitor_count,
+					'failed': 0,
 					'errors': [cmd.stderr or cmd.stdout or "CLI command failed"]
 				}
 
-			LOGGER.info(cmd.stdout)
-
-			# Parse output to get count (CLI output varies, use our pre-counted value)
-			deleted = monitor_count if not dry_run else 0
-
-			LOGGER.info(f"Delete complete: {monitor_count} monitors {'would be ' if dry_run else ''}deleted")
+			# Parse CLI output for count
+			deleted_count = self._parse_delete_output(cmd.stdout)
+			LOGGER.info(f"Delete complete: {deleted_count} monitors {'would be ' if dry_run else ''}deleted")
 
 			return {
 				'success': True,
 				'dry_run': dry_run,
-				'deleted': deleted if not dry_run else monitor_count,  # For dry-run, report what would be deleted
+				'deleted': deleted_count,
 				'failed': 0,
 				'errors': []
 			}
@@ -611,7 +609,7 @@ class BulkImportMonitors(Monitors):
 				'success': False,
 				'dry_run': dry_run,
 				'deleted': 0,
-				'failed': monitor_count,
+				'failed': 0,
 				'errors': [error]
 			}
 
@@ -621,9 +619,33 @@ class BulkImportMonitors(Monitors):
 				'success': False,
 				'dry_run': dry_run,
 				'deleted': 0,
-				'failed': monitor_count,
+				'failed': 0,
 				'errors': [str(e)]
 			}
+
+	def _parse_convert_output(self, cli_output: str) -> int:
+		"""Parse montecarlo monitors convert-to-ui CLI output to extract count.
+
+		Args:
+			cli_output (str): Raw CLI output.
+
+		Returns:
+			int: Number of monitors converted/to be converted.
+		"""
+		import re
+
+		# Count standalone CONVERT operations (e.g., " - CONVERT monitor_name")
+		# Use word boundary to avoid matching "CONVERTING" or "CONVERTED"
+		convert_count = len(re.findall(r"\bCONVERT\b", cli_output))
+		if convert_count > 0:
+			return convert_count
+
+		# Try to find numeric count in output (e.g., "5 monitors")
+		match = re.search(r"(\d+)\s+monitor", cli_output, re.IGNORECASE)
+		if match:
+			return int(match.group(1))
+
+		return 0
 
 	def convert_to_ui_by_namespace(
 		self,
@@ -655,34 +677,6 @@ class BulkImportMonitors(Monitors):
 		namespace_clean = namespace.replace(':', '-').replace(' ', '_')
 		LOGGER.info(f"Starting monitor convert-to-ui ({mode}) for namespace '{namespace_clean}'...")
 
-		# Try to get monitors in namespace for reporting (optional - CLI will handle the actual work)
-		monitor_count = None
-		try:
-			monitor_uuids, raw_monitors = self.get_monitors_by_namespace(namespace)
-			monitor_count = len(monitor_uuids)
-
-			if monitor_count == 0:
-				LOGGER.info(f"No monitors found in namespace '{namespace_clean}'")
-				return {
-					'success': True,
-					'dry_run': dry_run,
-					'converted': 0,
-					'failed': 0,
-					'errors': []
-				}
-
-			LOGGER.info(f"Found {monitor_count} monitors to convert")
-
-			# Log monitor names for visibility
-			for m in raw_monitors:
-				monitor_name = getattr(m, 'name', None) or m.uuid[:8]
-				if dry_run:
-					LOGGER.info(f"  WOULD CONVERT: {monitor_name}")
-				else:
-					LOGGER.info(f"  TO CONVERT: {monitor_name}")
-		except Exception as e:
-			LOGGER.warning(f"Could not fetch monitor list (proceeding with CLI): {e}")
-
 		# Build CLI command
 		cmd_args = [
 			"montecarlo", "--profile", self.profile,
@@ -702,30 +696,26 @@ class BulkImportMonitors(Monitors):
 				# Non-dry-run requires confirmation - pass "y"
 				cmd = subprocess.run(cmd_args, capture_output=True, text=True, input="y")
 
+			LOGGER.info(cmd.stdout)
+
 			if cmd.returncode != 0:
 				LOGGER.error(f"CLI stderr: {cmd.stderr}")
-				LOGGER.error(f"CLI stdout: {cmd.stdout}")
 				return {
 					'success': False,
 					'dry_run': dry_run,
 					'converted': 0,
-					'failed': monitor_count or 0,
+					'failed': 0,
 					'errors': [cmd.stderr or cmd.stdout or "CLI command failed"]
 				}
 
-			LOGGER.info(cmd.stdout)
-
-			# Use monitor_count if we have it, otherwise report based on CLI success
-			converted = monitor_count if monitor_count is not None else 0
-			if not dry_run:
-				LOGGER.info(f"Convert-to-ui complete: monitors converted successfully")
-			else:
-				LOGGER.info(f"Convert-to-ui dry-run complete")
+			# Parse CLI output for count
+			converted_count = self._parse_convert_output(cmd.stdout)
+			LOGGER.info(f"Convert-to-ui complete: {converted_count} monitors {'would be ' if dry_run else ''}converted")
 
 			return {
 				'success': True,
 				'dry_run': dry_run,
-				'converted': converted,
+				'converted': converted_count,
 				'failed': 0,
 				'errors': []
 			}
@@ -737,7 +727,7 @@ class BulkImportMonitors(Monitors):
 				'success': False,
 				'dry_run': dry_run,
 				'converted': 0,
-				'failed': monitor_count or 0,
+				'failed': 0,
 				'errors': [error]
 			}
 
@@ -747,7 +737,7 @@ class BulkImportMonitors(Monitors):
 				'success': False,
 				'dry_run': dry_run,
 				'converted': 0,
-				'failed': monitor_count or 0,
+				'failed': 0,
 				'errors': [str(e)]
 			}
 
