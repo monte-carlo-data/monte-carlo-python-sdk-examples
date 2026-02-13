@@ -254,6 +254,30 @@
 				}
 			}
 		},
+		"enable_row_count_by_tag.py": {
+			"description": "\nEnables or disables row count monitoring only for tables that have a specific tag (key and value).",
+			"arguments": {
+				"profile": {
+					"default": "default",
+					"required": false,
+					"help": "Specify an MCD profile name. Uses default otherwise."
+				},
+				"operation": {
+					"required": true,
+					"choices": ["enable", "disable"],
+					"default": "enable",
+					"help": "Enable or disable row count (volume) monitoring for the tagged tables."
+				},
+				"key": {
+					"required": true,
+					"help": "Tag property name (key) to filter tables."
+				},
+				"value": {
+					"required": true,
+					"help": "Tag property value to filter tables. Only tables with this tag key and value are affected."
+				}
+			}
+		},
 		"monitor_migration_util.py": {
 			"description": "\nExport monitors from UI to MaC.\n\n1. Run the utility in 'export' mode to generate MaC configuration.\n\n2. Modify the 'monitors.yml' generated in step 1 to incorporate monitor changes.\n\n3. Run the utility in 'migrate' mode (monitors will not be commited).\n\n   • Set -f flag to create the monitors.\n\n4. Once confirmed migrated monitors are working as expected, you may disable the original monitors by running the utility in 'disable' mode.\n\n   • Alternatively, you can delete the original monitors by running the utility in 'cleanup' mode.",
 			"subparsers": {
