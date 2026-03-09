@@ -47,6 +47,12 @@ class MCSDKApp(App):
     DEFAULT_MODE = "categories"
     BINDINGS = [
         Binding(
+            "q",
+            "quit",
+            "Quit",
+            tooltip="Quit the application",
+        ),
+        Binding(
             "r",
             "app.switch_mode('readme')",
             "ReadMe",

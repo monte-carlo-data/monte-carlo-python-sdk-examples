@@ -106,7 +106,7 @@ propcache==0.2.1
 protobuf==5.29.1
 psutil==6.1.0
 py==1.11.0
-pycarlo==0.9.15
+pycarlo>=0.12.0
 pycognito==2024.5.1
 pycparser==2.22
 pycryptodome==3.20.0

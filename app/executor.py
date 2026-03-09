@@ -4,7 +4,7 @@ from rich.syntax import Syntax
 from textual.binding import Binding
 from textual.app import ComposeResult
 from textual.containers import Grid, Center, Vertical, VerticalScroll, ScrollableContainer
-from textual.widgets import Footer, Label, Markdown, Static, Input, Select, RichLog, TabbedContent
+from textual.widgets import Footer, Label, Markdown, Static, Input, Select, RichLog, TabbedContent, SelectionList
 from textual.screen import Screen, ModalScreen
 from app.header import MCHeader
 from textual import events, on, work
@@ -43,6 +43,11 @@ class ExecutorArgs(Vertical, can_focus=False, can_focus_children=True):
 				padding: 1;
 				text-align: right;
 			}
+			SelectionList {
+				height: 6;
+				min-height: 6;
+				max-height: 6;
+			}
 		}
 	}
 	"""
@@ -78,12 +83,15 @@ class ExecutorArgs(Vertical, can_focus=False, can_focus_children=True):
 						yield Label(f"{mandatory}{arg}")
 						if arg == 'profile':
 							yield Select((profile, profile) for profile in self.get_profiles())
+						elif arg == 'entities' and arguments[arg].get('choices'):
+							# Multi-select for entities
+							choices = arguments[arg]['choices']
+							yield SelectionList(*[(choice, choice, choice == 'all') for choice in choices], id='entities')
+						elif arguments[arg].get('choices'):
+							choices = arguments[arg]['choices']
+							yield Select((choice, choice) for choice in choices)
 						else:
-							if arguments[arg].get('choices'):
-								choices = arguments[arg]['choices']
-								yield Select((choice, choice) for choice in choices)
-							else:
-								yield Input(placeholder=arguments[arg]['help'])
+							yield Input(placeholder=arguments[arg]['help'])
 
 	def get_profiles(self):
 		"""Read headers from mcd profiles.ini"""
@@ -116,13 +124,16 @@ class ExecutorArgs(Vertical, can_focus=False, can_focus_children=True):
 				grid._add_child(Label(f"{mandatory}{arg}"))
 				if arg == 'profile':
 					grid._add_child(Select((profile, profile) for profile in self.get_profiles()))
+				elif arg == 'entities' and selected_subparser_arguments[arg].get('choices'):
+					# Multi-select for entities
+					choices = selected_subparser_arguments[arg]['choices']
+					grid._add_child(SelectionList(*[(choice, choice, choice == 'all') for choice in choices], id='entities'))
+				elif selected_subparser_arguments[arg].get('choices'):
+					choices = selected_subparser_arguments[arg]['choices']
+					grid._add_child(Select.from_values(choices))
 				else:
-					if selected_subparser_arguments[arg].get('choices'):
-						choices = selected_subparser_arguments[arg]['choices']
-						grid._add_child(Select.from_values(choices))
-					else:
-						grid._add_child(Input(placeholder=selected_subparser_arguments[arg]['help'],
-											  tooltip=selected_subparser_arguments[arg]['help']))
+					grid._add_child(Input(placeholder=selected_subparser_arguments[arg]['help'],
+										  tooltip=selected_subparser_arguments[arg]['help']))
 
 		nodes = grid.query_children().nodes
 		grid.mount(*nodes)
@@ -173,7 +184,13 @@ class ExecutorArgs(Vertical, can_focus=False, can_focus_children=True):
 				args.append(f"-{flag[0]}")
 				if '★' in element._Static__content:
 					mandatory = True
-			if isinstance(element, Input) or isinstance(element, Select):
+			if isinstance(element, SelectionList):
+				# Multi-select: join selected values with commas
+				selected = list(element.selected)
+				value = ','.join(selected) if selected else 'all'
+				args.append(value)
+				mandatory = False
+			elif isinstance(element, Input) or isinstance(element, Select):
 				value = element.value
 				if mandatory and value == '':
 					self.notify(f"'{flags[-1]}' is required", severity="error")
