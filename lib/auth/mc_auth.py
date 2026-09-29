@@ -9,6 +9,7 @@ from pycognito import aws_srp
 from botocore.exceptions import ClientError
 from contextlib import nullcontext
 from pathlib import Path
+from pycarlo.common.errors import GqlError
 from pycarlo.core import Client, Session, Query, Mutation
 from rich.prompt import Confirm, Prompt
 from lib.helpers import sdk_helpers
@@ -76,23 +77,83 @@ class MCAuth(object):
     def get_token_status(self):
         """ """
 
+        threshold = 7
+
+        # Personal auth clients are indexed under "user". Try this first - it's unchanged
+        # from previous behavior and covers the common case.
         query = Query()
-        get_token_metadata = query.get_token_metadata(index="user")
+        get_token_metadata = query.get_token_metadata(index="user", is_service_api_token=False)
         get_token_metadata.__fields__("id", "expiration_time")
         res = self.client(query).get_token_metadata
-
-        threshold = 7
         token_info = [token for token in res if token.id == self.mcd_id_current]
-        token_expiration = token_info[0].expiration_time.astimezone(datetime.UTC) if len(token_info) > 0 else datetime.datetime.now(datetime.UTC)
+
+        if token_info:
+            self.__check_expiration(token_info[0], threshold, allow_regenerate=True)
+            return
+
+        # Not a personal token - this profile may be a service auth client instead, which is
+        # indexed under "account" and requires the 'settings/api/manage-tokens' permission to
+        # introspect. Service accounts are frequently scoped without that permission, so a
+        # GqlError here is expected and doesn't mean something is broken.
+        try:
+            query = Query()
+            get_token_metadata = query.get_token_metadata(index="account", is_service_api_token=True)
+            get_token_metadata.__fields__("id", "expiration_time")
+            res = self.client(query).get_token_metadata
+            token_info = [token for token in res if token.id == self.mcd_id_current]
+        except GqlError as e:
+            if "permission" in str(e).lower():
+                LOGGER.warning(
+                    f"Profile '{self.profile}' appears to be a service auth client without the "
+                    f"'settings/api/manage-tokens' permission - skipping automatic expiration check. "
+                    f"Grant that permission if you want this checked automatically, or rotate this "
+                    f"credential manually via the Monte Carlo CLI/UI."
+                )
+            else:
+                LOGGER.warning(
+                    f"Unable to check token expiration for profile '{self.profile}': {e}. "
+                    f"Skipping automatic expiration check."
+                )
+            return
+
+        if token_info:
+            self.__check_expiration(token_info[0], threshold, allow_regenerate=False)
+            return
+
+        # Found under neither index - don't guess. Surface this clearly instead of silently
+        # treating the credential as already expired.
+        LOGGER.warning(
+            f"Unable to locate token metadata for profile '{self.profile}' (mcd_id={self.mcd_id_current}) "
+            f"under either the personal (user) or service (account) auth client index. This credential "
+            f"may be a type this tool doesn't yet recognize. Skipping the automatic expiration check - "
+            f"verify this profile's credential manually via the Monte Carlo CLI/UI."
+        )
+
+    def __check_expiration(self, token, threshold: int, allow_regenerate: bool):
+        """ """
+
+        token_expiration = token.expiration_time.astimezone(datetime.UTC)
         expires_in_seconds = (token_expiration - datetime.datetime.now(datetime.UTC)).total_seconds()
 
+        if expires_in_seconds > (86400 * threshold):
+            return
+
+        if not allow_regenerate:
+            # Service auth clients are shared/automated credentials - never auto-rotate them from
+            # inside a migration run. Surface the warning and let a human decide when to rotate.
+            LOGGER.warning(
+                f"The service auth client associated with '{self.profile}' will expire in "
+                f"{int(expires_in_seconds/3600)} hours. This tool does not auto-rotate service auth "
+                f"client credentials - rotate it manually via the Monte Carlo CLI/UI."
+            )
+            return
+
         # Ask user (threshold) days before expiration if the token should be regenerated
-        if expires_in_seconds <= (86400 * threshold):
-            with sdk_helpers.PauseProgress(self.progress) if self.progress else nullcontext():
-                regenerate = Confirm.ask(f"The token associated with '{self.profile}' will expire in "
-                                         f"{int(expires_in_seconds/3600)} hours. Do you want to create a new one?")
-            if regenerate:
-                self.delete_token(self.create_token())
+        with sdk_helpers.PauseProgress(self.progress) if self.progress else nullcontext():
+            regenerate = Confirm.ask(f"The token associated with '{self.profile}' will expire in "
+                                     f"{int(expires_in_seconds/3600)} hours. Do you want to create a new one?")
+        if regenerate:
+            self.delete_token(self.create_token())
 
     def create_token(self):
         """ """
