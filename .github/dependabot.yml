@@ -1,0 +1,17 @@
+# Security updates only: version updates are off (limit 0), so Dependabot opens a pull
+# request only when an advisory needs one.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directories: ["/", "/admin", "/lineage"]
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      pip:
+        patterns: ["*"]
+    ignore:
+      # pycarlo 0.9.x imports pkg_resources, which setuptools 81 removed. Lift this when
+      # pycarlo is upgraded to a release that no longer uses it.
+      - dependency-name: setuptools
+        versions: [">=81"]
