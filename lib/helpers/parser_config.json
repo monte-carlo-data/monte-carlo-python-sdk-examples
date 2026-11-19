@@ -590,10 +590,10 @@
 	},
 	"migration": {
 		"workspace_migrator.py": {
-			"description": "\nWorkspace migration utility for Monte Carlo configurations.\n\nExport, import, and validate domains, data products, and blocklists between environments.\n\nExamples:\n\t# Export all entities\n\tpython migration/workspace_migrator.py export --profile source_env\n\n\t# Export specific entities\n\tpython migration/workspace_migrator.py export --profile source_env --entities domains,blocklists\n\n\t# Import (dry-run by default)\n\tpython migration/workspace_migrator.py import --profile target_env\n\n\t# Import with force (commit changes)\n\tpython migration/workspace_migrator.py import --profile target_env --force yes\n\n\t# Validate migration files\n\tpython migration/workspace_migrator.py validate --profile target_env",
+			"description": "\nWorkspace migration utility for Monte Carlo configurations.\n\nExport, import, and validate all MC configurations between environments. Supports: blocklists, domains, tags, exclusion_windows, data_products, audiences, and monitors.\n\nExamples:\n\t# Export all entities\n\tpython migration/workspace_migrator.py export --profile source_env\n\n\t# Export specific entities\n\tpython migration/workspace_migrator.py export --profile source_env --entities domains,blocklists,tags\n\n\t# Import (dry-run by default)\n\tpython migration/workspace_migrator.py import --profile target_env\n\n\t# Import with force (commit changes)\n\tpython migration/workspace_migrator.py import --profile target_env --force yes\n\n\t# Validate migration files\n\tpython migration/workspace_migrator.py validate --profile target_env",
 			"subparsers": {
 				"export": {
-					"description": "Export domains, data products, and blocklists to CSV files.",
+					"description": "Export MC configurations to files. Exports blocklists, domains, tags, exclusion_windows, data_products, and audiences to CSV files. Exports monitors to YAML (MaC format).\n\nExample:\n\tpython migration/workspace_migrator.py export --profile source_env --entities all",
 					"help": "Export MC configurations to files.",
 					"arguments": {
 						"profile": {
@@ -604,16 +604,17 @@
 						"entities": {
 							"required": false,
 							"default": "all",
-							"help": "Comma-separated list of entities: blocklists,domains,tags,exclusion_windows,data_products,monitors (or 'all')"
+							"choices": ["all", "blocklists", "domains", "tags", "exclusion_windows", "data_products", "audiences", "monitors"],
+							"help": "Comma-separated list of entity types to export, or 'all' for all entities. Example: 'domains,blocklists,tags'. Entities are exported in dependency order."
 						},
 						"output_dir": {
 							"required": false,
-							"help": "Directory to write export files. Defaults to migration/migration-data-exports/"
+							"help": "Directory to write export files. Default: migration/migration-data-exports/"
 						}
 					}
 				},
 				"import": {
-					"description": "Import domains, data products, blocklists, and monitors from files. Dry-run by default.",
+					"description": "Import MC configurations from files. Imports blocklists, domains, tags, exclusion_windows, data_products, and audiences from CSV files. Imports monitors from YAML (MaC format). Dry-run by default.\n\nEntities are imported in dependency order: blocklists → domains → tags → exclusion_windows → data_products → audiences → monitors.\n\nWarehouse mapping is required for tags and monitors when warehouse names differ between source and target environments.\n\nFor monitors: Monitors imported via MaC are code-managed by default. Use --convert_to_ui flag to auto-convert after import, or use the 'convert-to-ui' subcommand separately after import.\n\nExample:\n\tpython migration/workspace_migrator.py import --profile target_env --entities tags,monitors --warehouse_map \"US Warehouse=EU Warehouse\" --convert_to_ui --force yes",
 					"help": "Import MC configurations from files.",
 					"arguments": {
 						"profile": {
@@ -624,70 +625,72 @@
 						"entities": {
 							"required": false,
 							"default": "all",
-							"help": "Comma-separated list of entities: blocklists,domains,tags,exclusion_windows,data_products,monitors (or 'all')"
+							"choices": ["all", "blocklists", "domains", "tags", "exclusion_windows", "data_products", "audiences", "monitors"],
+							"help": "Comma-separated list of entity types to import, or 'all' for all entities. Example: 'domains,blocklists,tags'. Entities are imported in dependency order."
 						},
 						"input_dir": {
 							"required": false,
-							"help": "Directory containing import files. Defaults to migration/migration-data-exports/"
+							"help": "Directory containing import files. Default: migration/migration-data-exports/"
 						},
 						"warehouse_map": {
 							"required": false,
-							"help": "Warehouse name mapping for tag migrations: 'Source1=Dest1,Source2=Dest2'. Or create warehouse_mapping.json in input_dir."
+							"help": "Warehouse name mapping for tags and monitors migrations. Required when warehouse names differ between source and target environments.\n\nFormat: 'SourceName1=DestName1,SourceName2=DestName2'\nExample: 'US Snowflake=EU Snowflake,US BigQuery=EU BigQuery'\n\nAlternatively, create warehouse_mapping.json in input_dir with format:\n{\n  \"warehouse_mapping\": {\n    \"Source Name\": \"Destination Name\"\n  }\n}"
 						},
-					"force": {
-						"required": false,
-						"choices": ["yes", "no"],
-						"help": "Set to 'yes' to commit changes. Default is dry-run (preview only)."
-					},
-					"convert_to_ui": {
-						"required": false,
-						"action": "store_true",
-						"help": "Convert monitors to UI-editable after import."
+						"force": {
+							"required": false,
+							"choices": ["yes", "no"],
+							"help": "Set to 'yes' to commit changes. Default is dry-run (preview only). Dry-run shows what would be created/updated/skipped without making changes."
+						},
+						"convert_to_ui": {
+							"required": false,
+							"action": "store_true",
+							"help": "Convert monitors to UI-editable after import. Monitors imported via MaC are code-managed by default and cannot be edited in the UI. This flag converts them to UI-editable monitors."
+						}
 					}
-				}
-			},
-			"validate": {
-				"description": "Validate migration files before importing.",
-				"help": "Validate migration files.",
-				"arguments": {
-					"profile": {
-						"default": "default",
-						"required": false,
-						"help": "Specify an MCD profile name. Uses default otherwise."
-					},
-					"entities": {
-						"required": false,
-						"default": "all",
-						"help": "Comma-separated list of entities: blocklists,domains,tags,exclusion_windows,data_products,monitors (or 'all')"
-					},
-					"input_dir": {
-						"required": false,
-						"help": "Directory containing files to validate. Defaults to migration/migration-data-exports/"
+				},
+				"validate": {
+					"description": "Validate migration files before importing. Checks file format, required fields, and data integrity.\n\nExample:\n\tpython migration/workspace_migrator.py validate --profile target_env --entities all",
+					"help": "Validate migration files before importing.",
+					"arguments": {
+						"profile": {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"entities": {
+							"required": false,
+							"default": "all",
+							"choices": ["all", "blocklists", "domains", "tags", "exclusion_windows", "data_products", "audiences", "monitors"],
+							"help": "Comma-separated list of entity types to validate, or 'all' for all entities. Example: 'domains,blocklists,tags'"
+						},
+						"input_dir": {
+							"required": false,
+							"help": "Directory containing files to validate. Default: migration/migration-data-exports/"
+						}
 					}
-				}
-			},
-			"convert-to-ui": {
-				"description": "Convert monitors in a namespace from code-deployed to UI-editable.",
-				"help": "Convert monitors to UI-editable.",
-				"arguments": {
-					"profile": {
-						"default": "default",
-						"required": false,
-						"help": "Specify an MCD profile name. Uses default otherwise."
-					},
-					"namespace": {
-						"required": false,
-						"default": "migration",
-						"help": "Namespace containing monitors to convert. Defaults to 'migration'."
-					},
-					"force": {
-						"required": false,
-						"choices": ["yes", "no"],
-						"help": "Set to 'yes' to commit changes. Default is dry-run (preview only)."
+				},
+				"convert-to-ui": {
+					"description": "Convert monitors in a namespace from code-deployed to UI-editable. Monitors imported via MaC (Monitors as Code) are code-managed by default and cannot be edited in the Monte Carlo UI. This command converts them to UI-editable monitors.\n\nUse this subcommand if you imported monitors without the --convert_to_ui flag, or if you want to convert monitors from a previous import.\n\nAfter conversion, monitors move from the custom namespace (e.g., 'migration') to the 'ui' namespace.\n\nExample:\n\tpython migration/workspace_migrator.py convert-to-ui --profile target_env --namespace migration --force yes",
+					"help": "Convert monitors to UI-editable.",
+					"arguments": {
+						"profile": {
+							"default": "default",
+							"required": false,
+							"help": "Specify an MCD profile name. Uses default otherwise."
+						},
+						"namespace": {
+							"required": false,
+							"default": "migration",
+							"help": "Namespace containing monitors to convert. Defaults to 'migration'. Monitors imported via the migration tool are placed in this namespace by default."
+						},
+						"force": {
+							"required": false,
+							"choices": ["yes", "no"],
+							"help": "Set to 'yes' to commit changes. Default is dry-run (preview only). Dry-run shows what would be converted without making changes."
+						}
 					}
 				}
 			}
 		}
 	}
-}
 }

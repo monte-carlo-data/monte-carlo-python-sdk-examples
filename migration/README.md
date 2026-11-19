@@ -10,6 +10,72 @@ This module is designed to facilitate environment migrations (e.g. dev → prod 
 - **Validate** migration files before importing
 - **Import** configurations to a target MC environment (with dry-run support)
 
+## Quick Start: US → EU Workspace Migration
+
+### Prerequisites
+
+1. **Python 3.8+** with dependencies installed (`pip install -r requirements.txt`)
+2. **Monte Carlo API credentials** configured in `configs/configs.ini`:
+   ```ini
+   [us_workspace]
+   mcd_id = your_us_key_id
+   mcd_token = your_us_token
+
+   [eu_workspace]
+   mcd_id = your_eu_key_id
+   mcd_token = your_eu_token
+   ```
+
+### Migration Workflow
+
+**Step 1: Export from US workspace**
+```bash
+python migration/workspace_migrator.py export --profile us_workspace
+```
+
+**Step 2: Map warehouses** (required for tags and monitors)
+
+Edit `migration/migration-data-exports/warehouse_mapping_template.json` to create `warehouse_mapping.json`:
+```json
+{
+  "warehouse_mapping": {
+    "US Snowflake Warehouse": "EU Snowflake Warehouse",
+    "US BigQuery Project": "EU BigQuery Project"
+  }
+}
+```
+
+**Step 3: Validate** (optional but recommended)
+```bash
+python migration/workspace_migrator.py validate --profile eu_workspace
+```
+
+**Step 4: Import with dry-run** (preview changes)
+```bash
+python migration/workspace_migrator.py import --profile eu_workspace \
+  --entities tags,monitors --convert-to-ui
+```
+
+**Step 5: Import with force** (commit changes)
+```bash
+python migration/workspace_migrator.py import --profile eu_workspace \
+  --entities tags,monitors --convert-to-ui --force yes
+```
+
+### Important Behaviors
+
+- **Warehouse mapping is required** for `tags` and `monitors` when warehouse names differ between workspaces
+- **Audiences are skipped** if they already exist (not updated)
+- **Monitors are code-managed** after import—use `--convert-to-ui` to make them UI-editable
+- **Dry-run is default**—always preview before using `--force yes`
+- **Import order**: Entities are imported in dependency order (blocklists → domains → tags → exclusion_windows → data_products → audiences → monitors)
+
+### Troubleshooting
+
+- **Logs**: Check `logs/workspace_migrator-YYYY-MM-DD.log` for detailed error messages
+- **Unmapped warehouses**: Tags/monitors with unmapped warehouses are skipped with warnings
+- **Validation errors**: Run `validate` command to check file format and required fields before importing
+- **API errors**: Verify credentials in `configs/configs.ini` and check network connectivity
 
 ### Key Components
 
