@@ -1,5 +1,5 @@
 pycarlo==0.0.8
-requests==2.32.0
-dotenv==1.0.1
-cryptography~=42.0.7
+requests==2.33.0
+python-dotenv==1.2.2
+cryptography==50.0.0
 pycryptodome~=3.20.0
