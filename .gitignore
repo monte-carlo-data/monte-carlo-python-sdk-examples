@@ -7,6 +7,11 @@
 *.yml
 *.yaml
 .env
+.env.*
+*.env
+env-copy
+*env-copy*
+!.env.example
 .idea
 venv
 .DS_Store
