@@ -17,4 +17,13 @@ venv
 .DS_Store
 output
 keys
+*.pem
+*.key
+*.p12
+*.pfx
+*.p8
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
 __pycache__
